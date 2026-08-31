@@ -1,0 +1,21 @@
+name:  Deploy on backend companion
+on:
+  push:
+    branches: ['main']
+jobs:
+  Deploy:
+    runs-on: companion
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: executing remote ssh commands
+        run: |
+          bash -c "
+          set -e
+          cd /home/care-companion/care_companion
+          git fetch
+          git reset --hard
+          git pull origin main
+          docker-compose down || true
+          docker-compose build
+          docker compose up -d"
