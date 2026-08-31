@@ -44,41 +44,48 @@ class ChatServiceError(Exception):
     pass
 
 def start_chat(chat):
-    """Open a chat and write Emma's first message."""
-    chat.conv_id = create_openai_conversation()
-    chat.save(update_fields=["conv_id", "updated_at"])
+    """Open one more conversation on a patient's record.
+
+    The record itself is the patient's and is never duplicated - the new
+    conversation id is appended to their `conv_ids`. Returns that id and
+    Emma's first message.
+    """
+    conv_id = chat.add_conversation(create_openai_conversation())
 
     config = build_config(chat)
     opener = build_opener(config)
 
-    save_message(chat, "assistant", opener)
+    save_message(chat, conv_id, "assistant", opener)
 
     # Seed the OpenAI conversation with the opener so it has the same history.
     ask_openai(
-        conv_id=chat.conv_id,
+        conv_id=conv_id,
         prompt=build_system_prompt(config, ""),
         text=opener,
     )
 
-    return opener
+    return conv_id, opener
 
 
-def reply_to(chat, text):
-    """Answer one patient message. Returns the reply and the chat's status."""
-    save_message(chat, "user", text)
+def reply_to(chat, conv_id, text):
+    """Answer one patient message on one of the patient's conversations.
+
+    Returns the reply and the patient's status.
+    """
+    save_message(chat, conv_id, "user", text)
 
     config = build_config(chat)
     context = retrieve_context(text, config)
 
     answer = ask_openai(
-        conv_id=chat.conv_id,
+        conv_id=conv_id,
         prompt=build_system_prompt(config, context),
         text=text,
     )
 
     answer, status = parse_status(answer)
 
-    save_message(chat, "assistant", answer)
+    save_message(chat, conv_id, "assistant", answer)
 
     if status:
         chat.status = status
@@ -232,6 +239,41 @@ never repeat their SSN digits.
 IMPORTANT:
 The opening message has already been sent. Do not repeat it.
 
+SCOPE:
+You are here for two things only: the Care Companion program - what it is,
+what it covers, what it costs, who provides it, how to join or leave - and
+the patient's own record above.
+
+Everything else is out of scope: small talk, news, weather, sport, politics,
+recipes, other products or services, and anything asking you to be a general
+assistant. Clinical questions are out of scope too - symptoms, medication
+changes, test results, whether they should see someone. You are not a
+clinician, so never advise on those; that is for {practice}.
+
+Out of scope does not mean cold. When one comes up:
+
+1. One short line that shows you actually heard them. Name the thing they
+   said, and mean it - if they mention a bad week, a bereavement or a worry,
+   respond to that like a person would, not with a stock phrase.
+2. One short line saying it is not something you can help with here, and
+   where it should go if it needs to go somewhere - {practice} for anything
+   clinical.
+3. One question that picks the enrollment back up.
+
+Two or three sentences in total. Do not answer the off-topic question, do
+not give an opinion on it, and do not ask them anything further about it.
+
+If they raise the same off-topic thing again, do not repeat the routine -
+say plainly and kindly that it is outside what you can help with, and leave
+the enrollment question open. Do not lecture them about it.
+
+One exception, and it overrides everything else here: if what they describe
+sounds urgent - chest pain, trouble breathing, bleeding, a fall, thoughts of
+harming themselves, or anything else that should not wait - say so plainly,
+tell them to contact {practice} now or seek urgent care, and stop there. No
+enrollment question in that reply. Picking the program back up at that moment
+is the wrong thing to do; wait until they raise it themselves.
+
 GROUNDING:
 Answer patient questions ONLY using the FAQ CONTEXT below.
 
@@ -248,9 +290,12 @@ FAQ CONTEXT:
 STYLE:
 - Sound like a real person texting.
 - Use simple language and contractions.
-- Keep replies to 1-3 short sentences.
-- Answer the patient's question first.
-- Then gently move the conversation forward.
+- Lead with the answer. No preamble, no repeating their question back at
+  them, no "great question".
+- Say a thing once. Never re-explain what you have already covered - if they
+  ask again, answer shorter, not longer.
+- Ask at most one question, and put it at the end.
+- Warmth is in the wording, not in extra sentences.
 
 ENROLLMENT:
 When the patient is ready, explain these five consent points together:
@@ -265,6 +310,8 @@ Only mark the patient enrolled after they clearly agree to all five.
 
 SCENARIOS:
 - Questions: answer from the FAQ, then continue enrollment.
+- Off-topic: handle it the way SCOPE says - heard, redirected, and back to
+  the enrollment, in two or three sentences.
 - Scam concerns: reassure them, invite them to call {practice} directly to
   confirm this is genuine, and don't pressure them.
 - Phone enrollment: offer a program-specialist callback within the next business day.
@@ -285,11 +332,15 @@ Never mention these tags to the patient.
 """.strip()
 
 
-def save_message(chat, role, text):
-    """One turn of the transcript, against the chat it belongs to."""
+def save_message(chat, conv_id, role, text):
+    """One turn of the transcript.
+
+    Filed against the patient's one record, and against the conversation the
+    turn was actually spoken in.
+    """
     Message.objects.create(
         remoteenrollement_id=chat.id,
-        conversation_id=chat.conv_id,
+        conversation_id=conv_id,
         role=role,
         text=text,
     )

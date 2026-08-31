@@ -5,11 +5,14 @@ from django.db import models
 class Message(models.Model):
     """A single message in an enrollment chat.
 
-    `conversation_id` is OpenAI's `conv_id`, which is what a transcript is
-    read by and what the chat it belongs to is addressed by.
-    `remoteenrollement_id` is that same chat's own `_id`, so a message joins
-    back to the `remoteenrollement` collection without going through OpenAI's
-    id.
+    `remoteenrollement_id` is the patient's own record in the
+    `remoteenrollement` collection. There is one such record per patient, so
+    every message a patient has ever sent or been sent - across all of their
+    conversations - hangs off the same id.
+
+    `conversation_id` is the OpenAI conversation this particular message
+    belongs to, one of the ids in that record's `conv_ids`. It is what a
+    single transcript is read by.
     """
 
     remoteenrollement_id = ObjectIdField(db_index=True, null=True, blank=True)

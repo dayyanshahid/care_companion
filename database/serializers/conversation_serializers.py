@@ -14,17 +14,26 @@ class ChatStartSerializer(serializers.Serializer):
 
 
 class ChatSerializer(serializers.ModelSerializer):
-    """One chat, as the list endpoint reports it.
+    """One patient's enrollment record, as the list endpoint reports it.
 
-    A chat is addressed by `conv_id` - OpenAI's id, and what the transcript is
-    read by - everywhere it is addressed at all, so its own `_id` is not
-    exposed.
+    There is one record per patient, so `conv_ids` carries every conversation
+    ever opened with them, oldest first, and `conv_id` is the newest of those
+    - the one a transcript is read by. The record's own `_id` is not exposed.
     """
+
+    # DRF has no mapping for the backend's ArrayField, so both are
+    # declared - `conv_ids` to render as a list rather than its repr,
+    # and `conv_id` because it is a property, not a field.
+    conv_id = serializers.CharField(read_only=True)
+    conv_ids = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
 
     class Meta:
         model = RemoteEnrollement
         fields = [
             "conv_id",
+            "conv_ids",
             "patient_id",
             "patient_name",
             "provider",
