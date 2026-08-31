@@ -1,4 +1,4 @@
-name:  Deploy on backend companion
+name:  Deploy on backend companion 
 on:
   push:
     branches: ['main']
