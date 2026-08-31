@@ -1,0 +1,57 @@
+# --- Secrets -----------------------------------------------------------
+# .env holds the Django secret key, the OpenAI key, the Qdrant Cloud key and
+# the portal Mongo password. It must never be committed - .env.example is the
+# checked-in template.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Virtualenvs -------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# --- Django ------------------------------------------------------------
+*.log
+db.sqlite3
+db.sqlite3-journal
+/staticfiles/
+/static_root/
+/media/
+
+# --- Tooling -----------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Editors and OS ----------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Working files -----------------------------------------------------
+*.bak
+*.orig
+*.tmp
+~$*.docx
