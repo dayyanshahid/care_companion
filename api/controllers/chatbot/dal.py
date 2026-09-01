@@ -18,13 +18,13 @@ CAPTURED_FIELDS = (
 def is_object_id(value):
     return ObjectId.is_valid(value)
 
-def list_captures():
-    return portal.list_patients()
+def list_captures(tenant):
+    return portal.list_patients(tenant)
 
-def get_capture(patient_id):
-    return portal.get_patient(patient_id)
+def get_capture(tenant, patient_id):
+    return portal.get_patient(tenant, patient_id)
 
-def upsert_chat(capture):
+def upsert_chat(tenant, capture):
 
     fields = {
         "patient_profile": portal.profile(capture),
@@ -34,11 +34,13 @@ def upsert_chat(capture):
         "recency": portal.recency(capture),
     }
 
-    chat = RemoteEnrollement.objects.filter(patient_id=capture["_id"]).first()
+    chat = RemoteEnrollement.objects.filter(
+        tenant=tenant["key"], patient_id=capture["_id"]
+    ).first()
 
     if chat is None:
         chat = RemoteEnrollement.objects.create(
-            patient_id=capture["_id"], **fields
+            tenant=tenant["key"], patient_id=capture["_id"], **fields
         )
 
         return chat, True
@@ -51,13 +53,15 @@ def upsert_chat(capture):
 
     return chat, False
 
-def find_chat_by_conversation(conv_id):
+def find_chat_by_conversation(tenant, conv_id):
     return RemoteEnrollement.objects.filter(
-        conv_ids__contains=[conv_id]
+        tenant=tenant["key"], conv_ids__contains=[conv_id]
     ).first()
 
-def find_started_chats(patient_id=None):
-    chats = RemoteEnrollement.objects.filter(conv_ids__len__gt=0)
+def find_started_chats(tenant, patient_id=None):
+    chats = RemoteEnrollement.objects.filter(
+        tenant=tenant["key"], conv_ids__len__gt=0
+    )
 
     if patient_id:
         chats = chats.filter(patient_id=ObjectId(patient_id))
@@ -75,12 +79,17 @@ def delete_chat(chat):
     chat.delete()
 
 def create_message(chat, conv_id, role, text):
+    # The chat already knows its tenant, so the message inherits it rather
+    # than being told again.
     return Message.objects.create(
+        tenant=chat.tenant,
         remoteenrollement_id=chat.id,
         conversation_id=conv_id,
         role=role,
         text=text,
     )
 
-def find_messages(conv_id):
-    return Message.objects.filter(conversation_id=conv_id).order_by("created_at")
+def find_messages(tenant, conv_id):
+    return Message.objects.filter(
+        tenant=tenant["key"], conversation_id=conv_id
+    ).order_by("created_at")

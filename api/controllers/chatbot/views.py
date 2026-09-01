@@ -6,6 +6,7 @@ from database.serializers import (
     ChatMessagePayloadSerializer,
     ChatStartSerializer,
 )
+from utils import tenant as tenants
 from utils.common import response
 from utils.enums import HttpStatus
 from utils.messages import messages
@@ -13,18 +14,26 @@ from utils.messages import messages
 
 @api_view(["POST"])
 def start_chat(request):
+    tenant = tenants.from_request(request)
+
     payload = ChatStartSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
     result = services.start_chat(
-        payload.validated_data["patient_id"]
+        tenant, payload.validated_data["patient_id"]
     )
 
     if result:
+        # The chat opened either way, so this stays a 201 - the message is
+        # what tells staff the patient never got their link.
+        started = (
+            messages["chatStarted"]
+            if result["email_sent"]
+            else messages["chatStartedNoEmail"]
+        )
+
         return Response(
-            response.success(
-                messages["chatStarted"], HttpStatus.created, result
-            ),
+            response.success(started, HttpStatus.created, result),
             status=HttpStatus.created,
         )
     else:
@@ -36,10 +45,13 @@ def start_chat(request):
 
 @api_view(["POST"])
 def send_message(request):
+    tenant = tenants.from_request(request)
+
     payload = ChatMessagePayloadSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
     result = services.send_message(
+        tenant,
         payload.validated_data["conv_id"],
         payload.validated_data["text"],
     )
@@ -57,7 +69,11 @@ def send_message(request):
 
 @api_view(["GET"])
 def list_conversations(request):
-    result = services.list_conversations(request.query_params.get("patient_id"))
+    tenant = tenants.from_request(request)
+
+    result = services.list_conversations(
+        tenant, request.query_params.get("patient_id")
+    )
 
     if result:
         return Response(
@@ -71,7 +87,9 @@ def list_conversations(request):
 
 @api_view(["GET"])
 def read_conversation(request, ident):
-    message, result = services.read_conversation(ident)
+    tenant = tenants.from_request(request)
+
+    message, result = services.read_conversation(tenant, ident)
 
     if result:
         return Response(response.success(message, data=result))
@@ -83,7 +101,9 @@ def read_conversation(request, ident):
 
 @api_view(["GET"])
 def list_patients(request):
-    result = services.list_patients()
+    tenant = tenants.from_request(request)
+
+    result = services.list_patients(tenant)
 
     if result:
         return Response(

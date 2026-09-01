@@ -1,20 +1,20 @@
 """Knowledge base for the Care Companion FAQ (the RAG layer).
 
 Ingestion parses the FAQ .docx into Q&A chunks, embeds each with OpenAI
-(text-embedding-3-small by default), and stores them in Qdrant Cloud.
-Retrieval embeds a query and asks Qdrant for the nearest chunks - the search
-runs in Qdrant's index, so nothing is scored in Python here.
+(text-embedding-3-small by default), and stores them in MongoDB - the text
+and its vector on the same document, in `faq_chunks`.
 
-Qdrant holds both the vector and the chunk's text, as the point's payload, so
-the FAQ has no MongoDB collection of its own.
+Retrieval embeds the query and scores every chunk by cosine similarity here
+in Python. This MongoDB has no vector index, and at a few dozen chunks a
+full scan is faster than reaching for one would be.
 """
 import re
-from dataclasses import dataclass
+from math import sqrt
 
 import openai
 from django.conf import settings
-from qdrant_client import QdrantClient, models
 
+from database.models import FaqChunk
 from database.serializers import FaqChunkSerializer
 from utils.common import build_error
 from utils.enums import HttpStatus
@@ -24,21 +24,10 @@ _QA_RE = re.compile(r"^Q\d+\.\s*", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(\d+)\.\s+(.*)")
 
 _openai_client = None
-_qdrant_client = None
 
 
 class KnowledgeError(Exception):
     """Raised when parsing fails, or a provider is unavailable."""
-
-
-@dataclass
-class Chunk:
-    """One retrieved FAQ entry. Reads like the model row it replaced."""
-
-    id: str
-    category: str
-    question: str
-    answer: str
 
 
 # --- Ingestion --------------------------------------------------------------
@@ -46,6 +35,7 @@ class Chunk:
 def ingest_faq(path):
     """Parse the FAQ .docx, embed each Q&A, and replace the stored chunks."""
     entries = parse_faq(path)
+
     if not entries:
         raise KnowledgeError(messages["noFaqEntries"].format(path=path))
 
@@ -53,29 +43,15 @@ def ingest_faq(path):
         [f"{e['category']} — {e['question']}\n{e['answer']}" for e in entries]
     )
 
-    client = _qdrant()
-
-    # A fresh collection each time, so a re-ingest cannot leave stale answers
-    # behind. The upsert is one call, so the gap is as short as it can be.
-    try:
-        client.delete_collection(settings.QDRANT_COLLECTION)
-        client.create_collection(
-            collection_name=settings.QDRANT_COLLECTION,
-            vectors_config=models.VectorParams(
-                size=settings.EMBEDDING_DIM,
-                distance=models.Distance.COSINE,
-            ),
-        )
-        client.upsert(
-            collection_name=settings.QDRANT_COLLECTION,
-            points=[
-                models.PointStruct(id=index, vector=vector, payload=entry)
-                for index, (entry, vector) in enumerate(zip(entries, vectors))
-            ],
-            wait=True,
-        )
-    except Exception as exc:
-        raise KnowledgeError(messages["qdrantIngestFailed"].format(exc=exc)) from exc
+    # Everything is replaced in one go, so a re-ingest cannot leave a stale
+    # answer behind next to the new ones.
+    FaqChunk.objects.all().delete()
+    FaqChunk.objects.bulk_create(
+        [
+            FaqChunk(embedding=vector, **entry)
+            for entry, vector in zip(entries, vectors)
+        ]
+    )
 
     return len(entries)
 
@@ -139,87 +115,44 @@ def search(query, top_k=None):
 
 def retrieve(query, top_k):
     """Return the top_k (chunk, score) pairs most relevant to the query."""
-    query_vector = _embed([query])[0]
+    chunks = all_chunks()
 
-    try:
-        found = _qdrant().query_points(
-            collection_name=settings.QDRANT_COLLECTION,
-            query=query_vector,
-            limit=top_k,
-            with_payload=True,
-        ).points
-    except Exception as exc:
-        raise KnowledgeError(messages["qdrantSearchFailed"].format(exc=exc)) from exc
+    if not chunks:
+        raise KnowledgeError(messages["noFaqStored"])
 
-    return [
-        (
-            Chunk(
-                id=str(point.id),
-                category=point.payload.get("category", ""),
-                question=point.payload.get("question", ""),
-                answer=point.payload.get("answer", ""),
-            ),
-            point.score,
-        )
-        for point in found
-    ]
+    vector = _embed([query])[0]
+
+    ranked = sorted(
+        ((chunk, _cosine(vector, chunk.embedding)) for chunk in chunks),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+
+    return ranked[:top_k]
 
 
 def all_chunks(limit=1000):
-    """Every stored chunk, vectors left behind. For checks and inspection."""
-    try:
-        points, _ = _qdrant().scroll(
-            collection_name=settings.QDRANT_COLLECTION,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
-    except Exception as exc:
-        raise KnowledgeError(messages["qdrantReadFailed"].format(exc=exc)) from exc
-
-    return [
-        Chunk(
-            id=str(point.id),
-            category=point.payload.get("category", ""),
-            question=point.payload.get("question", ""),
-            answer=point.payload.get("answer", ""),
-        )
-        for point in points
-    ]
+    """Every stored chunk. For retrieval, and for checks and inspection."""
+    return list(FaqChunk.objects.all()[:limit])
 
 
 def count_chunks():
-    """How many chunks are stored. 0 also means the collection is not there."""
-    try:
-        client = _qdrant()
+    """How many chunks are stored. 0 also means nothing has been ingested."""
+    return FaqChunk.objects.count()
 
-        if not client.collection_exists(settings.QDRANT_COLLECTION):
-            return 0
 
-        return client.count(settings.QDRANT_COLLECTION, exact=True).count
-    except KnowledgeError:
-        raise
-    except Exception as exc:
-        raise KnowledgeError(messages["qdrantUnreachable"].format(exc=exc)) from exc
+def _cosine(left, right):
+    """Similarity of two vectors, 0 when either has no length."""
+    if not right:
+        return 0.0
+
+    dot = sum(a * b for a, b in zip(left, right))
+    size = sqrt(sum(a * a for a in left)) * sqrt(sum(b * b for b in right))
+
+    return dot / size if size else 0.0
 
 
 # --- Clients ----------------------------------------------------------------
-
-def _qdrant():
-    global _qdrant_client
-
-    if _qdrant_client is None:
-        if not settings.QDRANT_URL:
-            raise KnowledgeError(messages["qdrantUrlMissing"])
-
-        _qdrant_client = QdrantClient(
-            url=settings.QDRANT_URL,
-            api_key=settings.QDRANT_API_KEY or None,
-            timeout=30,
-        )
-
-    return _qdrant_client
-
 
 def _embed(texts):
     try:

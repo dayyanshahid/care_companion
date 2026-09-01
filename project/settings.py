@@ -46,8 +46,10 @@ DATABASES = {
 }
 
 
-PORTAL_MONGODB_URI = os.environ.get("PORTAL_MONGODB_URI", "")
-PORTAL_MONGODB_DB = os.environ.get("PORTAL_MONGODB_DB", "primecare")
+CENTRAL_MONGODB_URI = os.environ.get("CENTRAL_MONGODB_URI", "")
+CENTRAL_MONGODB_DB = os.environ.get(
+    "CENTRAL_MONGODB_DB", "synaptix_central_admin_portal_demo"
+)
 
 DEFAULT_AUTO_FIELD = "django_mongodb_backend.fields.ObjectIdAutoField"
 
@@ -61,12 +63,6 @@ REST_FRAMEWORK = {
 }
 
 
-QDRANT_URL = os.environ.get("QDRANT_URL", "")
-QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
-QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "faq_chunks")
-
-EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1536"))
-
 # --- OpenAI (Chat + Embeddings) ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
@@ -74,24 +70,15 @@ OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
 
-# --- Email (the chat link sent to the patient) ---
-# Where the chat UI is served from. The link is this plus ?conv=<conv_id>.
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://127.0.0.1:5500/index.html")
+FRONTEND_PATH = os.environ.get("FRONTEND_PATH", "/chat")
 
-# Linked from the invitation email's header and footer.
-SITE_URL = os.environ.get("SITE_URL", FRONTEND_URL)
-PRIVACY_URL = os.environ.get("PRIVACY_URL", SITE_URL)
-TERMS_URL = os.environ.get("TERMS_URL", SITE_URL)
+ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/assets").rstrip("/")
 
-# Microsoft Graph is the sender for transactional mail. The app registration
-# holds the Mail.Send application permission, so the mailbox needs no password
-# and nothing here speaks SMTP.
 MS_GRAPH_TENANT_ID = os.environ.get("MS_GRAPH_TENANT_ID", "")
 MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
 MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
 MS_GRAPH_SENDER_EMAIL = os.environ.get("MS_GRAPH_SENDER_EMAIL", "")
 MS_GRAPH_TIMEOUT = int(os.environ.get("MS_GRAPH_TIMEOUT", "15"))
-# Off by default: a noreply mailbox has no reason to keep a Sent Items copy.
 MS_GRAPH_SAVE_TO_SENT_ITEMS = (
     os.environ.get("MS_GRAPH_SAVE_TO_SENT_ITEMS", "false").lower() == "true"
 )
@@ -109,9 +96,6 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", MS_GRAPH_SENDER_EMAIL or "care-companion@example.com"
 )
 
-# Without Graph credentials there is nowhere to send, so the mail is printed
-# instead of being dropped - a chat still opens, and the link is visible in
-# the console.
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
     "utils.graph_mail.GraphEmailBackend"

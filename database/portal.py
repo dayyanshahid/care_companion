@@ -1,66 +1,46 @@
-"""Read-only access to the practice portal's enrollment captures.
-
-The portal lives on its own Mongo cluster, so it is read with pymongo
-directly rather than through a Django model. Only remote captures are ever
-visible here - onsite patients are enrolled at the desk, not by Emma.
-
-A capture is a wide document. `profile` hands the whole of it to Emma, and
-`summary` is the short version the portal lists patients by.
-"""
 import json
 from datetime import date
 
 from bson import ObjectId
-from django.conf import settings
 from pymongo import MongoClient
 
 from utils.enums import CaptureType, Recency
-from utils.messages import messages
 
 COLLECTION = "onsiteenrollmentcaptures"
 REMOTE = {"type": CaptureType.remote.value}
 
-_collection = None
+_clients = {}
 
 
 class PortalError(Exception):
     """Raised when the portal cannot be reached or read."""
 
 
-def captures():
-    """The remote-captures collection, opened once and reused."""
-    global _collection
+def captures(tenant):
+    uri = tenant["uri"]
 
-    if _collection is None:
-        if not settings.PORTAL_MONGODB_URI:
-            raise PortalError(messages["portalUriMissing"])
+    if uri not in _clients:
+        _clients[uri] = MongoClient(uri, serverSelectionTimeoutMS=8000)
 
-        client = MongoClient(
-            settings.PORTAL_MONGODB_URI, serverSelectionTimeoutMS=8000
-        )
-        _collection = client[settings.PORTAL_MONGODB_DB][COLLECTION]
-
-    return _collection
+    return _clients[uri][tenant["db"]][COLLECTION]
 
 
-def list_patients():
-    """Every remote patient, newest capture first."""
+def list_patients(tenant):
     try:
-        found = captures().find(REMOTE).sort("capturedAt", -1)
+        found = captures(tenant).find(REMOTE).sort("capturedAt", -1)
         return [summary(capture) for capture in found]
     except Exception as exc:
         raise PortalError(str(exc)) from exc
 
 
-def get_patient(patient_id):
-    """One remote patient by capture id, or None if there is no such patient."""
+def get_patient(tenant, patient_id):
     try:
         object_id = ObjectId(patient_id)
     except Exception:
         return None
 
     try:
-        return captures().find_one({"_id": object_id, **REMOTE})
+        return captures(tenant).find_one({"_id": object_id, **REMOTE})
     except Exception as exc:
         raise PortalError(str(exc)) from exc
 
@@ -71,7 +51,6 @@ def full_name(capture):
 
 
 def summary(capture):
-    """One patient, as the portal lists them."""
     return {
         "patient_id": str(capture["_id"]),
         "name": full_name(capture),
@@ -83,7 +62,6 @@ def summary(capture):
 
 
 def recency(capture):
-    """How long ago the patient was seen, in the wording the opener expects."""
     seen = capture.get("latestAppointmentDate")
 
     if not seen:
@@ -94,16 +72,8 @@ def recency(capture):
     except ValueError:
         return Recency.year
 
-    # A future appointment means they are booked in, not overdue, so treat
-    # them the same as a patient seen recently.
     return Recency.oneMonth if days <= 60 else Recency.year
 
 
 def profile(capture):
-    """The patient's whole capture, as JSON the model can read.
-
-    Everything on the record goes to Emma - nothing is picked out here, so a
-    field the portal adds later reaches her without a code change. `default`
-    turns the ObjectIds and dates into strings.
-    """
     return json.dumps(capture, indent=2, default=str, ensure_ascii=False)

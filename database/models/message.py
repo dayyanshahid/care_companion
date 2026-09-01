@@ -17,6 +17,10 @@ class Message(models.Model):
     single transcript is read by.
     """
 
+    # The tenant the chat belongs to, carried over from its record so a
+    # transcript can be read by conversation id alone without leaving it.
+    tenant = models.CharField(max_length=100, db_index=True)
+
     remoteenrollement_id = ObjectIdField(db_index=True, null=True, blank=True)
     conversation_id = models.CharField(max_length=255, db_index=True)
     role = models.CharField(max_length=20, choices=choices(MessageRole))

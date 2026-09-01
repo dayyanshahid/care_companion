@@ -4,9 +4,9 @@ from rest_framework import serializers
 class FaqChunkSerializer(serializers.Serializer):
     """Read serializer for a retrieved FAQ chunk.
 
-    Chunks live in Qdrant, not in a Mongo collection, so this reads the
-    `Chunk` the retrieval layer returns rather than a model row. The vector
-    itself is never exposed.
+    Declared field by field rather than off the model, so the embedding is
+    never exposed - it is the one field on the row nobody calling the API
+    has any use for.
     """
 
     id = serializers.CharField(read_only=True)

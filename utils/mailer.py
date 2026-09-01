@@ -1,7 +1,7 @@
-from urllib.parse import urlencode
-
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
+from django.core.validators import validate_email
 from django.template.loader import render_to_string
 
 from utils.messages import messages
@@ -13,32 +13,33 @@ class MailError(Exception):
     """Raised when the mail could not be handed to the mail server."""
 
 
-def chat_link(conv_id):
-    """The chat UI's URL for one conversation."""
-    return f"{settings.FRONTEND_URL}?{urlencode({'conv': conv_id})}"
+def chat_link(conv_id, tenant):
+    # <subdomain>/chat/<conv_id>. The host is the tenant's own, which is also
+    # how the page knows which tenant it is for - it is opened from an email,
+    # with no portal around it to say.
+    base = tenant["subdomain"].rstrip("/")
+
+    return f"{base}{settings.FRONTEND_PATH}/{conv_id}"
 
 
-def send_chat_link(to, patient_name, practice, provider, conv_id):
-    """Email one patient the link to their chat. Returns the link sent.
-
-    The mail goes out as HTML with a plain-text alternative, so a client that
-    will not render the template still gets a readable link.
-    """
+def send_chat_link(to, patient_name, practice, provider, conv_id, tenant):
     if not to:
         raise MailError(messages["noPatientEmail"])
 
-    link = chat_link(conv_id)
+    try:
+        validate_email(to)
+    except ValidationError:
+        raise MailError(messages["invalidPatientEmail"].format(email=to))
+
+    link = chat_link(conv_id, tenant)
 
     context = {
         "patient_name": patient_name or "there",
         "practice": practice or "your care team",
         "provider": provider or "your care team",
         "link": link,
-        "site_url": settings.SITE_URL,
-        "privacy_url": settings.PRIVACY_URL,
-        "terms_url": settings.TERMS_URL,
-        # The portal capture carries no credentials, and the template hides
-        # both rows rather than print the mock-up's nephrologist at everyone.
+        "assets": settings.ASSETS_URL,
+        "site_url": tenant["subdomain"],
         "provider_title": "",
         "specialties": [],
     }

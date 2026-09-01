@@ -11,7 +11,18 @@ messages = {
     "patientNotFound": "No remote patient with that id.",
     "invalidPatientId": "Not a valid patient id.",
 
+    # --- Tenant -------------------------------------------------------------
+    "tenantHeaderMissing": "The X-Tenant header is required.",
+    "tenantUnknown": "No tenant is served at '{subdomain}'.",
+    "tenantRegistryUnavailable": (
+        "The tenant registry is unavailable right now. Please try again."
+    ),
+
     "chatStarted": "Chat started.",
+    "chatStartedNoEmail": (
+        "Chat started, but the link could not be emailed to the patient. "
+        "Share the chat link with them instead."
+    ),
     "messageSent": "Message sent.",
     "conversationsRetrieved": "Conversations retrieved successfully.",
     "noConversations": "No conversations found.",
@@ -33,6 +44,7 @@ messages = {
         "- {practice}"
     ),
     "noPatientEmail": "The patient has no email address on file.",
+    "invalidPatientEmail": "The patient's email address is not valid: {email}",
     "chatLinkFailed": "The chat link could not be emailed: {exc}",
 
     # --- Knowledge ----------------------------------------------------------
@@ -40,10 +52,10 @@ messages = {
     "noSearchResults": "No matching FAQ entries found.",
     "searchUnavailable": "Search is unavailable right now. Please try again.",
     "noFaqEntries": "No FAQ entries found in {path}.",
-    "qdrantIngestFailed": "Qdrant rejected the ingest: {exc}",
-    "qdrantSearchFailed": "Qdrant could not be searched: {exc}",
-    "qdrantReadFailed": "Qdrant could not be read: {exc}",
-    "qdrantUnreachable": "Qdrant could not be reached: {exc}",
+    "noFaqStored": (
+        "The FAQ has not been ingested yet. Run: "
+        "manage.py ingest_faq <path to the FAQ .docx>"
+    ),
 
     # --- Configuration ------------------------------------------------------
     "openaiKeyMissing": "OPENAI_API_KEY is not configured.",
@@ -55,11 +67,10 @@ messages = {
     "graphTokenFailed": "Microsoft Graph refused the sign-in: {detail}",
     "graphSendFailed": "Microsoft Graph refused the message: {detail}",
     "graphUnreachable": "Microsoft Graph could not be reached: {exc}",
-    "qdrantUrlMissing": "QDRANT_URL is not configured.",
-    "portalUriMissing": "PORTAL_MONGODB_URI is not configured.",
+    "centralUriMissing": "CENTRAL_MONGODB_URI is not configured.",
 
     # --- Ingest command -----------------------------------------------------
-    "ingestCommandHelp": "Parse the FAQ .docx, embed each Q&A with OpenAI, and store it in Qdrant.",
+    "ingestCommandHelp": "Parse the FAQ .docx, embed each Q&A with OpenAI, and store it in MongoDB.",
     "ingestPathHelp": "Path to the FAQ .docx file",
     "ingestSuccess": "Ingested {count} FAQ entries.",
 }

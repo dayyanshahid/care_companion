@@ -3,7 +3,6 @@ django-mongodb-backend==6.0.*
 pymongo>=4.9
 djangorestframework>=3.16
 openai>=1.0.0
-qdrant-client>=1.12
 python-docx>=1.1
 python-dotenv>=1.0.0
 django-cors-headers>=4.4

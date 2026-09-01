@@ -56,9 +56,9 @@ class ChatServiceError(Exception):
     """A failure inside the assistant itself - OpenAI, or the FAQ behind it."""
 
 
-def start_chat(patient_id):
+def start_chat(tenant, patient_id):
     try:
-        capture = dal.get_capture(patient_id)
+        capture = dal.get_capture(tenant, patient_id)
     except dal.PortalError as exc:
         raise build_error(
             messages["portalUnavailable"], HttpStatus.badGateway, exc
@@ -67,7 +67,7 @@ def start_chat(patient_id):
     if not capture:
         return None
 
-    chat, is_new_record = dal.upsert_chat(capture)
+    chat, is_new_record = dal.upsert_chat(tenant, capture)
 
     try:
         conv_id, _ = open_conversation(chat)
@@ -79,21 +79,24 @@ def start_chat(patient_id):
             messages["assistantUnavailable"], HttpStatus.badGateway, exc
         ) from exc
 
+    email_sent, email_error = deliver_chat_link(tenant, capture, chat, conv_id)
+
     return {
         "conv_id": conv_id,
         "conv_ids": chat.conv_ids,
         "patient_id": str(chat.patient_id) if chat.patient_id else None,
         "patient_name": chat.patient_name,
         "status": chat.status,
-        "chat_link": mailer.chat_link(conv_id),
+        "chat_link": mailer.chat_link(conv_id, tenant),
         "email": capture.get("email", ""),
-        "email_sent": deliver_chat_link(capture, chat, conv_id),
-        "messages": transcript(conv_id),
+        "email_sent": email_sent,
+        "email_error": email_error,
+        "messages": transcript(tenant, conv_id),
     }
 
 
-def send_message(conv_id, text):
-    chat = dal.find_chat_by_conversation(conv_id)
+def send_message(tenant, conv_id, text):
+    chat = dal.find_chat_by_conversation(tenant, conv_id)
 
     if not chat:
         return None
@@ -110,33 +113,36 @@ def send_message(conv_id, text):
     ).data
 
 
-def list_conversations(patient_id=None):
+def list_conversations(tenant, patient_id=None):
     if patient_id and not dal.is_object_id(patient_id):
         raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
 
     return ChatSerializer(
-        dal.find_started_chats(patient_id), many=True
+        dal.find_started_chats(tenant, patient_id), many=True
     ).data
 
 
-def read_conversation(ident):
+def read_conversation(tenant, ident):
     if dal.is_object_id(ident):
-        return messages["conversationsRetrieved"], list_conversations(ident)
+        return (
+            messages["conversationsRetrieved"],
+            list_conversations(tenant, ident),
+        )
 
-    return messages["transcriptRetrieved"], transcript(ident)
+    return messages["transcriptRetrieved"], transcript(tenant, ident)
 
 
-def list_patients():
-    """Every remote patient the portal holds."""
+def list_patients(tenant):
+    """Every remote patient this tenant's portal holds."""
     try:
-        return dal.list_captures()
+        return dal.list_captures(tenant)
     except dal.PortalError as exc:
         raise build_error(
             messages["portalUnavailable"], HttpStatus.badGateway, exc
         ) from exc
 
 
-def deliver_chat_link(capture, chat, conv_id):
+def deliver_chat_link(tenant, capture, chat, conv_id):
     try:
         mailer.send_chat_link(
             capture.get("email"),
@@ -144,23 +150,24 @@ def deliver_chat_link(capture, chat, conv_id):
             chat.practice,
             chat.provider,
             conv_id,
+            tenant,
         )
     except mailer.MailError as exc:
         logger.warning("Chat %s: %s", conv_id, exc)
 
-        return False
+        return False, str(exc)
 
-    return True
+    return True, ""
 
 
-def transcript(conv_id):
+def transcript(tenant, conv_id):
     return [
         {
             "role": message.role,
             "text": message.text,
             "created_at": message.created_at,
         }
-        for message in dal.find_messages(conv_id)
+        for message in dal.find_messages(tenant, conv_id)
     ]
 
 
@@ -403,6 +410,27 @@ STYLE:
   ask again, answer shorter, not longer.
 - Ask at most one question, and put it at the end.
 - Warmth is in the wording, not in extra sentences.
+
+PERSUASION:
+Your job is to get the patient enrolled. Every reply should move them a step
+closer, and you should ask - don't wait to be asked.
+
+- Make it about them. Tie the program to what is actually on their record -
+  the conditions it would help them manage, their own provider, the gap since
+  their last visit. A reason that fits their life beats a list of features.
+- Lead with what they get, not what the program is. A care manager who calls
+  them, sorts out refills and appointments, and catches problems early.
+- When they hesitate, name the worry out loud and answer that one thing from
+  the FAQ - cost, time, privacy, "I'm already managing fine". Then ask again.
+- End on an easy next step, not an open question. "Shall I go through what
+  you'd be agreeing to?" is easier to say yes to than "so, interested?".
+- If they want to think it over or ask family, that is fine - offer to cover
+  the consent points now so they have everything, and leave it with them.
+
+Honestly, though. Never pressure, guilt, or rush them. Never invent a benefit,
+promise it is free, or imply their care suffers without it. Ask again at most
+twice; after that, only if they bring it back up. A clear no is a no - take it
+gracefully.
 
 ENROLLMENT:
 When the patient is ready, explain these five consent points together:

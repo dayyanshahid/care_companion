@@ -8,8 +8,8 @@ class RemoteEnrollement(models.Model):
     """One remote enrollment - Emma's record for one patient.
 
     Lives in the `remoteenrollement` collection; Mongo assigns the `_id`.
-    There is exactly one document per patient. Opening a second, third or
-    tenth conversation with the same patient does not write a second
+    There is exactly one document per patient of one tenant. Opening a
+    second, third or tenth conversation with the same patient does not write a second
     document - the new conversation id is appended to `conv_ids` on the one
     they already have, so a patient's whole history stays on one record.
 
@@ -25,9 +25,16 @@ class RemoteEnrollement(models.Model):
     `conversation_id`.
     """
 
+    # The tenant this record belongs to - the `key` of its registry record.
+    # Every tenant reads its patients from its own database, so a capture id
+    # is only unique within one tenant: this scopes every lookup below, and
+    # nothing here is ever read without it.
+    tenant = models.CharField(max_length=100, db_index=True)
+
     # The portal capture this record was opened for - its own `_id`, as an
-    # ObjectId, so it joins straight back to `onsiteenrollmentcaptures`.
-    # One record per patient, so this is what a record is looked up by.
+    # ObjectId, so it joins straight back to that tenant's
+    # `onsiteenrollmentcaptures`. One record per patient, so this and the
+    # tenant together are what a record is looked up by.
     patient_id = ObjectIdField(db_index=True, null=True, blank=True)
 
     # What Emma knows about the patient, rendered from that capture at start.
