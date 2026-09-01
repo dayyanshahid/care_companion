@@ -99,8 +99,6 @@
                 <!-- Header: logo -->
                 <tr>
                   <td class="header-pad" align="left" style="padding:30px 32px 0 32px;">
-                    <!-- LOGO — data URI for standalone preview. FOR PRODUCTION swap for a hosted URL:
-                         src="https://assets.synaptix.example/smartsync-logo.png" -->
                     <a href="{{ site_url }}" target="_blank" style="display:inline-block;">
                       <img src="{{ assets }}/smartsync-logo@2x.png" width="156" height="27" alt="Smart Sync by Synaptix"
                            style="display:block; width:156px; max-width:156px; height:auto; border:0;">
@@ -111,15 +109,14 @@
                 <!-- Hero band: gradient + illustration as background image, live text on top -->
                 <tr>
                   <td class="hero-pad" style="padding:26px 16px 0 16px;">
-                    <!-- HERO BAND IMAGE (1004×450, 2x). Data URI for preview; FOR PRODUCTION host it:
-                         background="https://assets.synaptix.example/enroll-hero-band.jpg" and update the VML src below. -->
+                    <!-- HERO BAND IMAGE (1004×450, 2x) -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
                         <td class="hero" background="{{ assets }}/enroll-hero-band.jpg" bgcolor="#0B3F9E" valign="top" width="568" height="255"
                             style="width:568px; height:255px; background:#0B3F9E url('{{ assets }}/enroll-hero-band.jpg') no-repeat right center; background-size:cover; border-radius:18px;">
                           <!--[if gte mso 9]>
                           <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:568px;height:255px;">
-                            <v:fill type="frame" src="https://assets.synaptix.example/enroll-hero-band.jpg" color="#0B3F9E" />
+                            <v:fill type="frame" src="{{ assets }}/enroll-hero-band.jpg" color="#0B3F9E" />
                             <v:textbox inset="0,0,0,0">
                           <![endif]-->
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -161,8 +158,7 @@
                           </table>
                           <!--[if !mso]><!-->
                           <div class="hero-mobile-art" style="display:none; mso-hide:all; max-height:0; overflow:hidden; text-align:right;">
-                            <!-- MOBILE ART — right portion of the band with a faded left edge (PNG). Data URI for preview;
-                                 FOR PRODUCTION host it: src="https://assets.synaptix.example/enroll-hero-mobile.png" -->
+                            <!-- MOBILE ART — right portion of the band, faded left edge -->
                             <img src="{{ assets }}/enroll-hero-mobile.png" width="252" height="225" alt="" style="display:block; width:252px; height:auto; border:0; margin-left:auto;">
                           </div>
                           <!--<![endif]-->
@@ -185,9 +181,8 @@
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
                               <td class="doc-photo" width="76" valign="top" style="width:76px; padding-right:22px;">
-                                <!-- DOCTOR PHOTO — 152×152 PNG: circular photo, light ring and green check badge composited
-                                     server-side (Outlook ignores border-radius). Placeholder data URI for preview;
-                                     FOR PRODUCTION: src="[DOCTOR_PHOTO_URL]" -->
+                                <!-- DOCTOR PHOTO — 152×152 PNG: circular photo, light ring and green
+                                     check badge composited in (Outlook ignores border-radius). -->
                                 <img src="{{ assets }}/doctor-shafi@2x.png" width="76" height="76" alt="{{ provider }}"
                                      style="display:block; width:76px; height:76px; border:0;">
                               </td>
@@ -217,7 +212,6 @@
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#EFF4FF; border-radius:12px;">
                             <tr>
                               <td width="36" valign="middle" style="width:36px; padding:14px 0 14px 14px;">
-                                <!-- MAIL ICON — data URI for preview; FOR PRODUCTION host it: src="https://assets.synaptix.example/mail-circle.png" -->
                                 <img src="{{ assets }}/mail-circle@2x.png" width="36" height="36" alt="" style="display:block; width:36px; height:36px; border:0;">
                               </td>
                               <td valign="middle" align="left" style="padding:14px 16px 14px 14px; font-family:Inter,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif; font-size:15px; line-height:22px; font-weight:500; color:#1B2A48;">
@@ -254,7 +248,6 @@
                       <tr>
                         <td width="32" valign="middle" style="width:32px; padding:11px 0 11px 14px;">
                           <a href="{{ link }}" target="_blank" style="display:block;">
-                            <!-- CHAT ICON — data URI for preview; FOR PRODUCTION host it: src="https://assets.synaptix.example/chat-icon.png" -->
                             <img src="{{ assets }}/chat-icon@2x.png" width="32" height="32" alt="" style="display:block; width:32px; height:32px; border:0;">
                           </a>
                         </td>
@@ -281,7 +274,6 @@
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td valign="middle" style="padding-right:10px;">
-                          <!-- LOCK ICON — data URI for preview; FOR PRODUCTION host it: src="https://assets.synaptix.example/lock-circle.png" -->
                           <img src="{{ assets }}/lock-circle@2x.png" width="28" height="28" alt="" style="display:block; width:28px; height:28px; border:0;">
                         </td>
                         <td class="secure" valign="middle" style="font-family:Inter,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif; font-size:14px; line-height:20px; color:#6B7A90;">

@@ -1,5 +1,6 @@
 import logging
 import re
+from uuid import uuid4
 
 import openai
 from django.conf import settings
@@ -39,6 +40,11 @@ STATUS_PATTERN = re.compile(r"<<(%s)>>" % "|".join(STATUS_MAP))
 
 # Anything tag-shaped, so a stray or retired tag is scrubbed rather than read.
 ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
+
+# How many past messages go up with a turn. Enrollment chats are short, so
+# this only bites on one that has run unusually long - and there the oldest
+# turns are the ones worth dropping.
+HISTORY_LIMIT = 40
 
 # Everything the chat holds about its patient, reused on every turn.
 CONFIG_FIELDS = (
@@ -167,27 +173,21 @@ def transcript(tenant, conv_id):
             "text": message.text,
             "created_at": message.created_at,
         }
-        for message in dal.find_messages(tenant, conv_id)
+        for message in dal.find_messages(tenant["key"], conv_id)
     ]
 
 
 # --- The assistant ----------------------------------------------------------
 
 def open_conversation(chat):
-    conv_id = dal.add_conversation(chat, create_openai_conversation())
+    conv_id = dal.add_conversation(chat, new_conversation_id())
 
-    config = build_config(chat)
-    opener = build_opener(config)
+    opener = build_opener(build_config(chat))
 
     dal.create_message(chat, conv_id, MessageRole.assistant, opener)
 
-    # Seed the OpenAI conversation with the opener so it has the same history.
-    ask_openai(
-        conv_id=conv_id,
-        prompt=build_system_prompt(config, ""),
-        text=opener,
-    )
-
+    # Nothing is sent to OpenAI here. The opener is written from the
+    # patient's own record, and the first turn carries it up as history.
     return conv_id, opener
 
 
@@ -198,9 +198,8 @@ def reply_to(chat, conv_id, text):
     context = retrieve_context(text, config)
 
     answer = ask_openai(
-        conv_id=conv_id,
         prompt=build_system_prompt(config, context),
-        text=text,
+        history=history(chat, conv_id),
     )
 
     answer, status = parse_status(answer)
@@ -217,20 +216,36 @@ def build_config(chat):
     return {field: getattr(chat, field) for field in CONFIG_FIELDS}
 
 
-def create_openai_conversation():
-    try:
-        return client.conversations.create().id
-    except Exception as exc:
-        raise ChatServiceError(str(exc)) from exc
+def new_conversation_id():
+    """A conversation id of our own.
+
+    OpenAI used to hand these out and keep the history behind them, but an
+    organisation on Zero Data Retention cannot use that - nothing may be
+    stored there. So the id is ours, and `history` sends the transcript up
+    with every turn instead.
+
+    Keeps the `conv_` prefix: it is what the chat page reads its
+    conversation out of the URL by.
+    """
+    return f"conv_{uuid4().hex}"
 
 
-def ask_openai(conv_id, prompt, text):
+def history(chat, conv_id):
+    """The conversation so far, as the model reads it, oldest first."""
+    messages = list(dal.find_messages(chat.tenant, conv_id))
+
+    return [
+        {"role": message.role, "content": message.text}
+        for message in messages[-HISTORY_LIMIT:]
+    ]
+
+
+def ask_openai(prompt, history):
     try:
         response = client.responses.create(
             model=settings.OPENAI_MODEL,
-            conversation=conv_id,
             instructions=prompt,
-            input=text,
+            input=history,
             max_output_tokens=settings.OPENAI_MAX_TOKENS,
         )
     except Exception as exc:

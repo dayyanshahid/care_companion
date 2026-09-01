@@ -89,7 +89,9 @@ def create_message(chat, conv_id, role, text):
         text=text,
     )
 
-def find_messages(tenant, conv_id):
+def find_messages(tenant_key, conv_id):
+    # Takes the key rather than the whole tenant: a chat carries its own
+    # tenant as a key, and this is read from both sides.
     return Message.objects.filter(
-        tenant=tenant["key"], conversation_id=conv_id
+        tenant=tenant_key, conversation_id=conv_id
     ).order_by("created_at")
