@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "#v!*!fq6=x4ufwjtk9p18^*pzt4ex363h4ql!*zt3=cw^6=%s%")
-DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "false"
+DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 INSTALLED_APPS = [
@@ -72,7 +72,7 @@ RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
 
 FRONTEND_PATH = os.environ.get("FRONTEND_PATH", "/chat")
 
-ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/assets").rstrip("/")
+ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/api/assets").rstrip("/")
 
 MS_GRAPH_TENANT_ID = os.environ.get("MS_GRAPH_TENANT_ID", "")
 MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
