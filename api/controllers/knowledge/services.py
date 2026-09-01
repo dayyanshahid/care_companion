@@ -15,6 +15,11 @@ import openai
 from django.conf import settings
 from qdrant_client import QdrantClient, models
 
+from database.serializers import FaqChunkSerializer
+from utils.common import build_error
+from utils.enums import HttpStatus
+from utils.messages import messages
+
 _QA_RE = re.compile(r"^Q\d+\.\s*", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(\d+)\.\s+(.*)")
 
@@ -42,7 +47,7 @@ def ingest_faq(path):
     """Parse the FAQ .docx, embed each Q&A, and replace the stored chunks."""
     entries = parse_faq(path)
     if not entries:
-        raise KnowledgeError(f"No FAQ entries found in {path}.")
+        raise KnowledgeError(messages["noFaqEntries"].format(path=path))
 
     vectors = _embed(
         [f"{e['category']} — {e['question']}\n{e['answer']}" for e in entries]
@@ -70,7 +75,7 @@ def ingest_faq(path):
             wait=True,
         )
     except Exception as exc:
-        raise KnowledgeError(f"Qdrant rejected the ingest: {exc}") from exc
+        raise KnowledgeError(messages["qdrantIngestFailed"].format(exc=exc)) from exc
 
     return len(entries)
 
@@ -113,6 +118,25 @@ def parse_faq(path):
 
 # --- Retrieval --------------------------------------------------------------
 
+def search(query, top_k=None):
+    """The search endpoint's whole job: the ranked chunks, ready to return."""
+    try:
+        results = retrieve(query, top_k=top_k or settings.RAG_TOP_K)
+    except KnowledgeError as exc:
+        raise build_error(
+            messages["searchUnavailable"], HttpStatus.badGateway, exc
+        ) from exc
+
+    data = []
+
+    for chunk, score in results:
+        item = FaqChunkSerializer(chunk).data
+        item["score"] = round(score, 4)
+        data.append(item)
+
+    return data
+
+
 def retrieve(query, top_k):
     """Return the top_k (chunk, score) pairs most relevant to the query."""
     query_vector = _embed([query])[0]
@@ -125,7 +149,7 @@ def retrieve(query, top_k):
             with_payload=True,
         ).points
     except Exception as exc:
-        raise KnowledgeError(f"Qdrant could not be searched: {exc}") from exc
+        raise KnowledgeError(messages["qdrantSearchFailed"].format(exc=exc)) from exc
 
     return [
         (
@@ -151,7 +175,7 @@ def all_chunks(limit=1000):
             with_vectors=False,
         )
     except Exception as exc:
-        raise KnowledgeError(f"Qdrant could not be read: {exc}") from exc
+        raise KnowledgeError(messages["qdrantReadFailed"].format(exc=exc)) from exc
 
     return [
         Chunk(
@@ -176,7 +200,7 @@ def count_chunks():
     except KnowledgeError:
         raise
     except Exception as exc:
-        raise KnowledgeError(f"Qdrant could not be reached: {exc}") from exc
+        raise KnowledgeError(messages["qdrantUnreachable"].format(exc=exc)) from exc
 
 
 # --- Clients ----------------------------------------------------------------
@@ -186,7 +210,7 @@ def _qdrant():
 
     if _qdrant_client is None:
         if not settings.QDRANT_URL:
-            raise KnowledgeError("QDRANT_URL is not configured.")
+            raise KnowledgeError(messages["qdrantUrlMissing"])
 
         _qdrant_client = QdrantClient(
             url=settings.QDRANT_URL,
@@ -209,6 +233,6 @@ def _client():
     global _openai_client
     if _openai_client is None:
         if not settings.OPENAI_API_KEY:
-            raise KnowledgeError("OPENAI_API_KEY is not configured.")
+            raise KnowledgeError(messages["openaiKeyMissing"])
         _openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
     return _openai_client

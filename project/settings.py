@@ -31,7 +31,7 @@ ASGI_APPLICATION = "project.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {"context_processors": []},
     },
@@ -57,6 +57,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "UNAUTHENTICATED_USER": None,
+    "EXCEPTION_HANDLER": "utils.common.exception_handler",
 }
 
 
@@ -72,6 +73,51 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
+
+# --- Email (the chat link sent to the patient) ---
+# Where the chat UI is served from. The link is this plus ?conv=<conv_id>.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://127.0.0.1:5500/index.html")
+
+# Linked from the invitation email's header and footer.
+SITE_URL = os.environ.get("SITE_URL", FRONTEND_URL)
+PRIVACY_URL = os.environ.get("PRIVACY_URL", SITE_URL)
+TERMS_URL = os.environ.get("TERMS_URL", SITE_URL)
+
+# Microsoft Graph is the sender for transactional mail. The app registration
+# holds the Mail.Send application permission, so the mailbox needs no password
+# and nothing here speaks SMTP.
+MS_GRAPH_TENANT_ID = os.environ.get("MS_GRAPH_TENANT_ID", "")
+MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
+MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
+MS_GRAPH_SENDER_EMAIL = os.environ.get("MS_GRAPH_SENDER_EMAIL", "")
+MS_GRAPH_TIMEOUT = int(os.environ.get("MS_GRAPH_TIMEOUT", "15"))
+# Off by default: a noreply mailbox has no reason to keep a Sent Items copy.
+MS_GRAPH_SAVE_TO_SENT_ITEMS = (
+    os.environ.get("MS_GRAPH_SAVE_TO_SENT_ITEMS", "false").lower() == "true"
+)
+
+MS_GRAPH_CONFIGURED = all(
+    (
+        MS_GRAPH_TENANT_ID,
+        MS_GRAPH_CLIENT_ID,
+        MS_GRAPH_CLIENT_SECRET,
+        MS_GRAPH_SENDER_EMAIL,
+    )
+)
+
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", MS_GRAPH_SENDER_EMAIL or "care-companion@example.com"
+)
+
+# Without Graph credentials there is nowhere to send, so the mail is printed
+# instead of being dropped - a chat still opens, and the link is visible in
+# the console.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "utils.graph_mail.GraphEmailBackend"
+    if MS_GRAPH_CONFIGURED
+    else "django.core.mail.backends.console.EmailBackend",
+)
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

@@ -14,8 +14,11 @@ from bson import ObjectId
 from django.conf import settings
 from pymongo import MongoClient
 
+from utils.enums import CaptureType, Recency
+from utils.messages import messages
+
 COLLECTION = "onsiteenrollmentcaptures"
-REMOTE = {"type": "remote"}
+REMOTE = {"type": CaptureType.remote.value}
 
 _collection = None
 
@@ -30,7 +33,7 @@ def captures():
 
     if _collection is None:
         if not settings.PORTAL_MONGODB_URI:
-            raise PortalError("PORTAL_MONGODB_URI is not configured.")
+            raise PortalError(messages["portalUriMissing"])
 
         client = MongoClient(
             settings.PORTAL_MONGODB_URI, serverSelectionTimeoutMS=8000
@@ -84,16 +87,16 @@ def recency(capture):
     seen = capture.get("latestAppointmentDate")
 
     if not seen:
-        return "year"
+        return Recency.year
 
     try:
         days = (date.today() - date.fromisoformat(seen[:10])).days
     except ValueError:
-        return "year"
+        return Recency.year
 
     # A future appointment means they are booked in, not overdue, so treat
     # them the same as a patient seen recently.
-    return "onemonth" if days <= 60 else "year"
+    return Recency.oneMonth if days <= 60 else Recency.year
 
 
 def profile(capture):

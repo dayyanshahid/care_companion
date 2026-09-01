@@ -1,8 +1,23 @@
+import logging
 import re
+
 import openai
 from django.conf import settings
+
+from api.controllers.chatbot import dal
 from api.controllers.knowledge import services as knowledge
-from database.models import Message
+from database.serializers import ChatMessageResponseSerializer, ChatSerializer
+from utils import mailer
+from utils.common import build_error
+from utils.enums import (
+    HttpStatus,
+    MessageRole,
+    Recency,
+    TAGGED_STATUSES,
+)
+from utils.messages import messages
+
+logger = logging.getLogger(__name__)
 
 
 PLACEHOLDERS = {
@@ -11,8 +26,6 @@ PLACEHOLDERS = {
     "[Patient Name]": "patient_name",
 }
 
-# Emma holds no phone numbers, so the FAQ's number placeholders are reworded
-# to point at the practice rather than left standing in the text.
 PHONE_FALLBACKS = (
     (", [Care Companion number]", ""),
     ("[Care Companion number]", "the Care Companion number"),
@@ -20,13 +33,12 @@ PHONE_FALLBACKS = (
     ("[Practice phone]", "the practice"),
 )
 
-STATUS_MAP = {
-    "ENROLLED": "enrolled",
-    "DECLINED": "declined",
-    "CALLBACK": "callback",
-}
+STATUS_MAP = {status.value.upper(): status.value for status in TAGGED_STATUSES}
 
-STATUS_PATTERN = re.compile(r"<<(ENROLLED|DECLINED|CALLBACK)>>")
+STATUS_PATTERN = re.compile(r"<<(%s)>>" % "|".join(STATUS_MAP))
+
+# Anything tag-shaped, so a stray or retired tag is scrubbed rather than read.
+ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
 
 # Everything the chat holds about its patient, reused on every turn.
 CONFIG_FIELDS = (
@@ -41,21 +53,126 @@ client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 class ChatServiceError(Exception):
-    pass
+    """A failure inside the assistant itself - OpenAI, or the FAQ behind it."""
 
-def start_chat(chat):
-    """Open one more conversation on a patient's record.
 
-    The record itself is the patient's and is never duplicated - the new
-    conversation id is appended to their `conv_ids`. Returns that id and
-    Emma's first message.
-    """
-    conv_id = chat.add_conversation(create_openai_conversation())
+def start_chat(patient_id):
+    try:
+        capture = dal.get_capture(patient_id)
+    except dal.PortalError as exc:
+        raise build_error(
+            messages["portalUnavailable"], HttpStatus.badGateway, exc
+        ) from exc
+
+    if not capture:
+        return None
+
+    chat, is_new_record = dal.upsert_chat(capture)
+
+    try:
+        conv_id, _ = open_conversation(chat)
+    except ChatServiceError as exc:
+        if is_new_record:
+            dal.delete_chat(chat)
+
+        raise build_error(
+            messages["assistantUnavailable"], HttpStatus.badGateway, exc
+        ) from exc
+
+    return {
+        "conv_id": conv_id,
+        "conv_ids": chat.conv_ids,
+        "patient_id": str(chat.patient_id) if chat.patient_id else None,
+        "patient_name": chat.patient_name,
+        "status": chat.status,
+        "chat_link": mailer.chat_link(conv_id),
+        "email": capture.get("email", ""),
+        "email_sent": deliver_chat_link(capture, chat, conv_id),
+        "messages": transcript(conv_id),
+    }
+
+
+def send_message(conv_id, text):
+    chat = dal.find_chat_by_conversation(conv_id)
+
+    if not chat:
+        return None
+
+    try:
+        answer, status = reply_to(chat, conv_id, text)
+    except ChatServiceError as exc:
+        raise build_error(
+            messages["assistantUnavailable"], HttpStatus.badGateway, exc
+        ) from exc
+
+    return ChatMessageResponseSerializer(
+        {"conv_id": conv_id, "response": answer, "status": status}
+    ).data
+
+
+def list_conversations(patient_id=None):
+    if patient_id and not dal.is_object_id(patient_id):
+        raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
+
+    return ChatSerializer(
+        dal.find_started_chats(patient_id), many=True
+    ).data
+
+
+def read_conversation(ident):
+    if dal.is_object_id(ident):
+        return messages["conversationsRetrieved"], list_conversations(ident)
+
+    return messages["transcriptRetrieved"], transcript(ident)
+
+
+def list_patients():
+    """Every remote patient the portal holds."""
+    try:
+        return dal.list_captures()
+    except dal.PortalError as exc:
+        raise build_error(
+            messages["portalUnavailable"], HttpStatus.badGateway, exc
+        ) from exc
+
+
+def deliver_chat_link(capture, chat, conv_id):
+    try:
+        mailer.send_chat_link(
+            capture.get("email"),
+            chat.patient_name,
+            chat.practice,
+            chat.provider,
+            conv_id,
+        )
+    except mailer.MailError as exc:
+        logger.warning("Chat %s: %s", conv_id, exc)
+
+        return False
+
+    return True
+
+
+def transcript(conv_id):
+    return [
+        {
+            "role": message.role,
+            "text": message.text,
+            "created_at": message.created_at,
+        }
+        for message in dal.find_messages(conv_id)
+    ]
+
+
+# --- The assistant ----------------------------------------------------------
+
+def open_conversation(chat):
+    conv_id = dal.add_conversation(chat, create_openai_conversation())
 
     config = build_config(chat)
     opener = build_opener(config)
 
-    save_message(chat, conv_id, "assistant", opener)
+    dal.create_message(chat, conv_id, MessageRole.assistant, opener)
 
     # Seed the OpenAI conversation with the opener so it has the same history.
     ask_openai(
@@ -68,11 +185,7 @@ def start_chat(chat):
 
 
 def reply_to(chat, conv_id, text):
-    """Answer one patient message on one of the patient's conversations.
-
-    Returns the reply and the patient's status.
-    """
-    save_message(chat, conv_id, "user", text)
+    dal.create_message(chat, conv_id, MessageRole.user, text)
 
     config = build_config(chat)
     context = retrieve_context(text, config)
@@ -85,17 +198,15 @@ def reply_to(chat, conv_id, text):
 
     answer, status = parse_status(answer)
 
-    save_message(chat, conv_id, "assistant", answer)
+    dal.create_message(chat, conv_id, MessageRole.assistant, answer)
 
     if status:
-        chat.status = status
-        chat.save(update_fields=["status", "updated_at"])
+        dal.set_chat_status(chat, status)
 
     return answer, chat.status
 
 
 def build_config(chat):
-    """The patient details every prompt is built from."""
     return {field: getattr(chat, field) for field in CONFIG_FIELDS}
 
 
@@ -107,7 +218,6 @@ def create_openai_conversation():
 
 
 def ask_openai(conv_id, prompt, text):
-    """One turn against the OpenAI conversation. Returns its reply text."""
     try:
         response = client.responses.create(
             model=settings.OPENAI_MODEL,
@@ -165,11 +275,11 @@ def build_opener(config):
     opening = f"Hi {patient}! This is Emma from {office}{where}."
 
     intro = {
-        "onemonth": (
+        Recency.oneMonth: (
             f"{opening} It's been about a month since your last visit, and "
             f"{asked} wanted us to check in about our Care Companion program."
         ),
-        "year": (
+        Recency.year: (
             f"{opening} It's been about a year since we last saw you, and "
             f"{asked} wanted us to reach out about our Care Companion program."
         ),
@@ -189,23 +299,20 @@ def build_opener(config):
     )
 
 
-def phone_rule(config):
-    """Emma has no number to give, and must not invent one."""
-    practice = config["practice"] or "the practice"
-
-    return (
-        "Never state a phone number. You do not have one, so do not "
-        f'invent one - refer to "{practice}" or "the office" instead.'
-    )
-
-
 def build_system_prompt(config, context):
     provider = config["provider"] or "your care team"
     practice = config["practice"] or "your care team"
 
+    # Emma has no number to give, and must not invent one.
+    no_phone = (
+        "Never state a phone number. You do not have one, so do not "
+        f'invent one - refer to "{config["practice"] or "the practice"}" '
+        'or "the office" instead.'
+    )
+
     recency = {
-        "onemonth": "The patient was last seen about one month ago.",
-        "year": "The patient was last seen about one year ago.",
+        Recency.oneMonth: "The patient was last seen about one month ago.",
+        Recency.year: "The patient was last seen about one year ago.",
     }.get(config.get("recency"), "The patient was last seen about one year ago.")
 
     context = context or "(No relevant FAQ was found.)"
@@ -282,7 +389,7 @@ If the answer is not available, say you're not certain and offer to have
 the care team help, or point the patient back to {practice}.
 
 Never give an exact copay amount.
-{phone_rule(config)}
+{no_phone}
 
 FAQ CONTEXT:
 {context}
@@ -314,7 +421,8 @@ SCENARIOS:
   the enrollment, in two or three sentences.
 - Scam concerns: reassure them, invite them to call {practice} directly to
   confirm this is genuine, and don't pressure them.
-- Phone enrollment: offer a program-specialist callback within the next business day.
+- Phone enrollment: they can enroll over the phone by calling {practice}
+  directly. Keep talking here in the meantime.
 - Similar program: use the FAQ to explain coordination.
 - Declines: acknowledge politely and leave the door open. They can reach out
   to {practice} anytime.
@@ -322,37 +430,21 @@ SCENARIOS:
 STATUS:
 At the END of the reply, add exactly one tag only when it applies:
 
-<<ENROLLED>>
-<<CALLBACK>>
-<<DECLINED>>
+<<ENROLLED>>  - they agreed to all five consent points.
+<<DECLINED>>  - they clearly said no.
 
-Otherwise add no tag.
+Anything else is still an open conversation: add no tag. A patient who is
+undecided, thinking it over, asking questions, or wanting to talk to family
+first is NOT declined - leave them untagged so the chat stays open.
 
 Never mention these tags to the patient.
 """.strip()
 
 
-def save_message(chat, conv_id, role, text):
-    """One turn of the transcript.
-
-    Filed against the patient's one record, and against the conversation the
-    turn was actually spoken in.
-    """
-    Message.objects.create(
-        remoteenrollement_id=chat.id,
-        conversation_id=conv_id,
-        role=role,
-        text=text,
-    )
-
-
 def parse_status(reply):
     match = STATUS_PATTERN.search(reply)
+    status = STATUS_MAP[match.group(1)] if match else None
 
-    if not match:
-        return reply.strip(), None
-
-    status = STATUS_MAP[match.group(1)]
-    reply = STATUS_PATTERN.sub("", reply).strip()
+    reply = ANY_TAG_PATTERN.sub("", reply).strip()
 
     return reply, status

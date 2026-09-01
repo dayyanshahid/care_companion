@@ -1,6 +1,8 @@
 from django_mongodb_backend.fields import ObjectIdField
 from django.db import models
 
+from utils.enums import ActionType, MessageRole, choices
+
 
 class Message(models.Model):
     """A single message in an enrollment chat.
@@ -17,18 +19,16 @@ class Message(models.Model):
 
     remoteenrollement_id = ObjectIdField(db_index=True, null=True, blank=True)
     conversation_id = models.CharField(max_length=255, db_index=True)
-    role = models.CharField(max_length=20)  # "user" or "assistant"
+    role = models.CharField(max_length=20, choices=choices(MessageRole))
     text = models.TextField()
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    ACTION_CHOICES = [
-        (1, "created"),
-        (2, "updated"),
-        (3, "deleted"),
-    ]
-    action_type = models.IntegerField(choices=ACTION_CHOICES, default=1)
+    action_type = models.IntegerField(
+        choices=choices(ActionType),
+        default=ActionType.Created,
+    )
 
     class Meta:
         app_label = "database"

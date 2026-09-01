@@ -6,17 +6,18 @@ Usage:
 from django.core.management.base import BaseCommand, CommandError
 
 from api.controllers.knowledge import services
+from utils.messages import messages
 
 
 class Command(BaseCommand):
-    help = "Parse the FAQ .docx, embed each Q&A with OpenAI, and store it in MongoDB."
+    help = messages["ingestCommandHelp"]
 
     def add_arguments(self, parser):
-        parser.add_argument("path", help="Path to the FAQ .docx file")
+        parser.add_argument("path", help=messages["ingestPathHelp"])
 
     def handle(self, *args, **options):
         try:
             count = services.ingest_faq(options["path"])
         except services.KnowledgeError as exc:
             raise CommandError(str(exc))
-        self.stdout.write(self.style.SUCCESS(f"Ingested {count} FAQ entries."))
+        self.stdout.write(self.style.SUCCESS(messages["ingestSuccess"].format(count=count)))

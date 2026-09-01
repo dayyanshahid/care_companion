@@ -1,18 +1,7 @@
 from django_mongodb_backend.fields import ArrayField, ObjectIdField
 from django.db import models
 
-STATUS_CHOICES = [
-    ("active", "active"),
-    ("enrolled", "enrolled"),
-    ("declined", "declined"),
-    ("callback", "callback"),
-]
-
-# How long ago the patient was last seen. Drives the opener's wording.
-RECENCY_CHOICES = [
-    ("onemonth", "onemonth"),
-    ("year", "year"),
-]
+from utils.enums import ActionType, ChatStatus, Recency, choices
 
 
 class RemoteEnrollement(models.Model):
@@ -48,7 +37,11 @@ class RemoteEnrollement(models.Model):
     patient_name = models.CharField(max_length=120)
     provider = models.CharField(max_length=200, blank=True)
     practice = models.CharField(max_length=200, blank=True)
-    recency = models.CharField(max_length=20, choices=RECENCY_CHOICES, default="year")
+    recency = models.CharField(
+        max_length=20,
+        choices=choices(Recency),
+        default=Recency.year,
+    )
 
     # Every OpenAI conversation ever opened for this patient, oldest first.
     # Empty until the first chat is opened.
@@ -60,17 +53,19 @@ class RemoteEnrollement(models.Model):
     )
 
     # The patient's standing on the programme, carried across conversations.
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    status = models.CharField(
+        max_length=20,
+        choices=choices(ChatStatus),
+        default=ChatStatus.active,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    ACTION_CHOICES = [
-        (1, "created"),
-        (2, "updated"),
-        (3, "deleted"),
-    ]
-    action_type = models.IntegerField(choices=ACTION_CHOICES, default=1)
+    action_type = models.IntegerField(
+        choices=choices(ActionType),
+        default=ActionType.Created,
+    )
 
     @property
     def started(self):
