@@ -14,9 +14,6 @@ class MailError(Exception):
 
 
 def chat_link(conv_id, tenant):
-    # <subdomain>/chat/<conv_id>. The host is the tenant's own, which is also
-    # how the page knows which tenant it is for - it is opened from an email,
-    # with no portal around it to say.
     base = tenant["subdomain"].rstrip("/")
 
     return f"{base}{settings.FRONTEND_PATH}/{conv_id}"

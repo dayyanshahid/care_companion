@@ -1,9 +1,3 @@
-"""A Django email backend that sends through the Microsoft Graph API.
-
-Graph is app-only here: the app registration holds the Mail.Send application
-permission, so no mailbox password is needed and nothing talks SMTP. Mail
-leaves as the mailbox named by MS_GRAPH_SENDER_EMAIL.
-"""
 import base64
 import time
 from email.utils import parseaddr
@@ -18,10 +12,7 @@ LOGIN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 SEND_URL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
 SCOPE = "https://graph.microsoft.com/.default"
 
-# Renew a little before the token actually lapses, so a send that starts just
-# under the wire still carries a valid token.
 EXPIRY_MARGIN = 60
-
 
 class GraphMailError(Exception):
     """Raised when Graph would not take the message."""
@@ -67,12 +58,6 @@ def _body(message):
 
 
 class GraphEmailBackend(BaseEmailBackend):
-    """Send Django's EmailMessage objects through Graph's sendMail endpoint.
-
-    The token is fetched once per backend instance and reused until it is
-    close to expiring, so a batch of messages costs one login, not one each.
-    """
-
     def __init__(self, fail_silently=False, **kwargs):
         super().__init__(fail_silently=fail_silently)
         self.tenant_id = kwargs.get("tenant_id") or settings.MS_GRAPH_TENANT_ID
@@ -138,8 +123,6 @@ class GraphEmailBackend(BaseEmailBackend):
         if not (to or cc or bcc):
             return False
 
-        # Graph sends as the mailbox in the URL. A from_email of the form
-        # "Care Companion <noreply@...>" still gets its display name across.
         display_name, _address = parseaddr(message.from_email or "")
 
         payload = {
@@ -179,7 +162,6 @@ class GraphEmailBackend(BaseEmailBackend):
         except httpx.HTTPError as exc:
             raise GraphMailError(messages["graphUnreachable"].format(exc=exc)) from exc
 
-        # sendMail answers 202 Accepted with an empty body on success.
         if response.status_code not in (200, 202):
             raise GraphMailError(messages["graphSendFailed"].format(detail=response.text))
 

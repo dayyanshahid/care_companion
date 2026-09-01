@@ -38,15 +38,10 @@ STATUS_MAP = {status.value.upper(): status.value for status in TAGGED_STATUSES}
 
 STATUS_PATTERN = re.compile(r"<<(%s)>>" % "|".join(STATUS_MAP))
 
-# Anything tag-shaped, so a stray or retired tag is scrubbed rather than read.
 ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
 
-# How many past messages go up with a turn. Enrollment chats are short, so
-# this only bites on one that has run unusually long - and there the oldest
-# turns are the ones worth dropping.
 HISTORY_LIMIT = 40
 
-# Everything the chat holds about its patient, reused on every turn.
 CONFIG_FIELDS = (
     "patient_name",
     "patient_profile",
@@ -177,8 +172,6 @@ def transcript(tenant, conv_id):
     ]
 
 
-# --- The assistant ----------------------------------------------------------
-
 def open_conversation(chat):
     conv_id = dal.add_conversation(chat, new_conversation_id())
 
@@ -186,8 +179,6 @@ def open_conversation(chat):
 
     dal.create_message(chat, conv_id, MessageRole.assistant, opener)
 
-    # Nothing is sent to OpenAI here. The opener is written from the
-    # patient's own record, and the first turn carries it up as history.
     return conv_id, opener
 
 
@@ -217,16 +208,6 @@ def build_config(chat):
 
 
 def new_conversation_id():
-    """A conversation id of our own.
-
-    OpenAI used to hand these out and keep the history behind them, but an
-    organisation on Zero Data Retention cannot use that - nothing may be
-    stored there. So the id is ours, and `history` sends the transcript up
-    with every turn instead.
-
-    Keeps the `conv_` prefix: it is what the chat page reads its
-    conversation out of the URL by.
-    """
     return f"conv_{uuid4().hex}"
 
 

@@ -24,8 +24,6 @@ def start_chat(request):
     )
 
     if result:
-        # The chat opened either way, so this stays a 201 - the message is
-        # what tells staff the patient never got their link.
         started = (
             messages["chatStarted"]
             if result["email_sent"]

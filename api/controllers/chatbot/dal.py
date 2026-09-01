@@ -14,7 +14,6 @@ CAPTURED_FIELDS = (
     "recency",
 )
 
-
 def is_object_id(value):
     return ObjectId.is_valid(value)
 
@@ -79,8 +78,6 @@ def delete_chat(chat):
     chat.delete()
 
 def create_message(chat, conv_id, role, text):
-    # The chat already knows its tenant, so the message inherits it rather
-    # than being told again.
     return Message.objects.create(
         tenant=chat.tenant,
         remoteenrollement_id=chat.id,
@@ -90,8 +87,6 @@ def create_message(chat, conv_id, role, text):
     )
 
 def find_messages(tenant_key, conv_id):
-    # Takes the key rather than the whole tenant: a chat carries its own
-    # tenant as a key, and this is read from both sides.
     return Message.objects.filter(
         tenant=tenant_key, conversation_id=conv_id
     ).order_by("created_at")

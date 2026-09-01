@@ -6,14 +6,11 @@ def choices(enum):
 
 
 class ChatStatus(StrEnum):
-    # The conversation is still going - nothing has been settled yet.
     active = "active"
     enrolled = "enrolled"
     declined = "declined"
 
 
-# The two outcomes the assistant can tag a reply with. Anything untagged
-# leaves the chat `active`, which is what "still talking" means.
 TAGGED_STATUSES = (
     ChatStatus.enrolled,
     ChatStatus.declined,

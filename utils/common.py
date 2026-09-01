@@ -7,13 +7,6 @@ from utils.enums import HttpStatus
 from utils.messages import messages
 
 class ApiError(Exception):
-    """An error that knows the status it should be reported with.
-
-    Raised by the service layer, rendered by `exception_handler` below. It is
-    what keeps the views free of error handling - a service says what went
-    wrong and with which status, and no view has to catch anything.
-    """
-
     def __init__(self, message, code=HttpStatus.badRequest, error=None):
         super().__init__(message)
         self.message = message
