@@ -1,4 +1,3 @@
-"""Django settings for the Care Companion enrollment backend."""
 import os
 from pathlib import Path
 
@@ -73,6 +72,8 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
+
+CARE_COMPANION_PHONE = os.environ.get("CARE_COMPANION_PHONE", "")
 
 FRONTEND_PATH = os.environ.get("FRONTEND_PATH", "/chat")
 

@@ -5,22 +5,6 @@ from utils.enums import ActionType, choices
 
 
 class FaqChunk(models.Model):
-    """One Q&A from the FAQ handbook, with the vector it is retrieved by.
-
-    Lives in the `faq_chunks` collection. The FAQ is one shared knowledge
-    base - it describes the Care Companion programme itself, not any one
-    practice - so unlike every other collection here it is not scoped to a
-    tenant.
-
-    `embedding` is the OpenAI vector for the entry's text, stored alongside
-    it. This MongoDB has no vector index, so retrieval scores the whole
-    collection in Python; at a few dozen entries that costs less than the
-    round trip would to search anywhere else.
-
-    `ingest_faq` replaces every row at once, so ids are not stable across
-    ingests and nothing should hold on to them.
-    """
-
     category = models.CharField(max_length=200, blank=True)
     question = models.TextField()
     answer = models.TextField()

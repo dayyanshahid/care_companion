@@ -9,12 +9,8 @@ class ChatStatus(StrEnum):
     active = "active"
     enrolled = "enrolled"
     declined = "declined"
-
-
-TAGGED_STATUSES = (
-    ChatStatus.enrolled,
-    ChatStatus.declined,
-)
+    callback = "callback"
+    optedOut = "optedout"
 
 
 class Recency(StrEnum):

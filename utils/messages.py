@@ -35,7 +35,8 @@ messages = {
     "chatLinkSubject": "Your Care Companion chat is ready",
     "chatLinkBody": (
         "Hi {name},\n\n"
-        "Emma from {practice} has started a chat with you about the Care "
+        "The Care Companion assistant from {practice} has started a chat "
+        "with you about the Care "
         "Companion program - a dedicated care manager to support you "
         "between visits.\n\n"
         "Open it here:\n{link}\n\n"

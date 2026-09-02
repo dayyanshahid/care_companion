@@ -5,20 +5,6 @@ from utils.enums import ActionType, MessageRole, choices
 
 
 class Message(models.Model):
-    """A single message in an enrollment chat.
-
-    `remoteenrollement_id` is the patient's own record in the
-    `remoteenrollement` collection. There is one such record per patient, so
-    every message a patient has ever sent or been sent - across all of their
-    conversations - hangs off the same id.
-
-    `conversation_id` is the OpenAI conversation this particular message
-    belongs to, one of the ids in that record's `conv_ids`. It is what a
-    single transcript is read by.
-    """
-
-    # The tenant the chat belongs to, carried over from its record so a
-    # transcript can be read by conversation id alone without leaving it.
     tenant = models.CharField(max_length=100, db_index=True)
 
     remoteenrollement_id = ObjectIdField(db_index=True, null=True, blank=True)

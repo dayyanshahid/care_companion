@@ -8,37 +8,38 @@ from django.conf import settings
 from api.controllers.chatbot import dal
 from api.controllers.knowledge import services as knowledge
 from database.serializers import ChatMessageResponseSerializer, ChatSerializer
-from utils import mailer
+from utils import mailer, scripts
 from utils.common import build_error
 from utils.enums import (
+    ChatStatus,
     HttpStatus,
     MessageRole,
     Recency,
-    TAGGED_STATUSES,
 )
 from utils.messages import messages
 
 logger = logging.getLogger(__name__)
 
 
-PLACEHOLDERS = {
-    "[Provider name]": "provider",
-    "[Practice name]": "practice",
-    "[Patient Name]": "patient_name",
+SCRIPTED = {
+    "CONSENT": (scripts.CONSENT, None),
+    "ENROLLED": (scripts.WELCOME, ChatStatus.enrolled),
+    "DECLINED": (scripts.DECLINE, ChatStatus.declined),
+    "CALLBACK": (scripts.CALLBACK, ChatStatus.callback),
+    "OPTOUT": (scripts.OPT_OUT, ChatStatus.optedOut),
+    "EMERGENCY": (scripts.EMERGENCY, None),
+    "CRISIS": (scripts.CRISIS, None),
 }
 
-PHONE_FALLBACKS = (
-    (", [Care Companion number]", ""),
-    ("[Care Companion number]", "the Care Companion number"),
-    ("[Practice Phone Number]", "the practice"),
-    ("[Practice phone]", "the practice"),
-)
+# The two that end the conversation and put a person on it.
+ALERTING = ("EMERGENCY", "CRISIS")
 
-STATUS_MAP = {status.value.upper(): status.value for status in TAGGED_STATUSES}
-
-STATUS_PATTERN = re.compile(r"<<(%s)>>" % "|".join(STATUS_MAP))
+TAG_PATTERN = re.compile(r"<<(%s)>>" % "|".join(SCRIPTED))
 
 ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
+
+# A patient opting out is not left to the model to notice.
+OPT_OUT_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "quit", "end"}
 
 HISTORY_LIMIT = 40
 
@@ -48,6 +49,7 @@ CONFIG_FIELDS = (
     "recency",
     "provider",
     "practice",
+    "practice_phone",
 )
 
 client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -186,6 +188,14 @@ def reply_to(chat, conv_id, text):
     dal.create_message(chat, conv_id, MessageRole.user, text)
 
     config = build_config(chat)
+
+    if is_opt_out(text):
+        answer = scripts.fill(scripts.OPT_OUT, config)
+        dal.set_chat_status(chat, ChatStatus.optedOut)
+        dal.create_message(chat, conv_id, MessageRole.assistant, answer)
+
+        return answer, chat.status
+
     context = retrieve_context(text, config)
 
     answer = ask_openai(
@@ -193,18 +203,48 @@ def reply_to(chat, conv_id, text):
         history=history(chat, conv_id),
     )
 
-    answer, status = parse_status(answer)
+    answer = apply_script(chat, answer, config)
 
     dal.create_message(chat, conv_id, MessageRole.assistant, answer)
-
-    if status:
-        dal.set_chat_status(chat, status)
 
     return answer, chat.status
 
 
+def is_opt_out(text):
+    """True when the patient's whole message is an opt-out word."""
+    return "".join(c for c in text.lower() if c.isalpha()) in OPT_OUT_WORDS
+
+
+def apply_script(chat, answer, config):
+    match = TAG_PATTERN.search(answer)
+
+    if not match:
+        return ANY_TAG_PATTERN.sub("", answer).strip()
+
+    tag = match.group(1)
+    script, status = SCRIPTED[tag]
+
+    if status:
+        dal.set_chat_status(chat, status)
+
+    if status is ChatStatus.enrolled:
+        dal.record_consent(chat, scripts.CONSENT_VERSION)
+
+    if tag in ALERTING:
+        raised = dal.raise_alert(chat)
+        logger.warning(
+            "Chat %s: %s reported for patient %s, alert at %s",
+            chat.conv_id, tag.lower(), chat.patient_id, raised,
+        )
+
+    return scripts.fill(script, config)
+
+
 def build_config(chat):
-    return {field: getattr(chat, field) for field in CONFIG_FIELDS}
+    config = {field: getattr(chat, field) for field in CONFIG_FIELDS}
+    config["care_companion_phone"] = settings.CARE_COMPANION_PHONE
+
+    return config
 
 
 def new_conversation_id():
@@ -245,72 +285,25 @@ def retrieve_context(query, config):
         raise ChatServiceError(str(exc)) from exc
 
     return "\n\n".join(
-        f"Q: {fill(chunk.question, config)}\n"
-        f"A: {fill(chunk.answer, config)}"
+        f"Q: {scripts.fill(chunk.question, config)}\n"
+        f"A: {scripts.fill(chunk.answer, config)}"
         for chunk, _ in results
     )
 
 
-def fill(text, config):
-
-    for placeholder, field in PLACEHOLDERS.items():
-        value = config.get(field) or ""
-
-        if value:
-            text = text.replace(placeholder, value)
-
-    for placeholder, replacement in PHONE_FALLBACKS:
-        text = text.replace(placeholder, replacement)
-
-    return text
-
-
 def build_opener(config):
-    patient = config["patient_name"]
-    provider = config["provider"]
-    practice = config["practice"]
-
-    
-    office = f"{provider}'s office" if provider else "your care team"
-    where = f" at {practice}" if practice else ""
-    asked = provider or "your care team"
-
-    opening = f"Hi {patient}! This is Emma from {office}{where}."
-
-    intro = {
-        Recency.oneMonth: (
-            f"{opening} It's been about a month since your last visit, and "
-            f"{asked} wanted us to check in about our Care Companion program."
-        ),
-        Recency.year: (
-            f"{opening} It's been about a year since we last saw you, and "
-            f"{asked} wanted us to reach out about our Care Companion program."
-        ),
-    }.get(config.get("recency"))
-
-    if not intro:
-        intro = (
-            f"{opening} {asked} asked us to reach out about our Care "
-            "Companion program."
-        )
-
-    return (
-        f"{intro} You'd get a dedicated care manager to support you between "
-        "visits — help with your medications, appointments, diet, and keeping "
-        "an eye on your vitals. It's covered by Medicare, Medicare Advantage, "
-        "and most commercial plans. Would it be alright if I shared a little more?"
-    )
+    return scripts.fill(scripts.OPENING, config)
 
 
 def build_system_prompt(config, context):
     provider = config["provider"] or "your care team"
     practice = config["practice"] or "your care team"
 
-    # Emma has no number to give, and must not invent one.
-    no_phone = (
-        "Never state a phone number. You do not have one, so do not "
-        f'invent one - refer to "{config["practice"] or "the practice"}" '
-        'or "the office" instead.'
+    phone = (
+        f"The practice's number is {config['practice_phone']}. Give it only "
+        "when a patient needs to reach the office."
+        if config.get("practice_phone")
+        else "You have no phone number for anyone. Never state or invent one."
     )
 
     recency = {
@@ -322,10 +315,23 @@ def build_system_prompt(config, context):
     profile = config.get("patient_profile") or f"Name: {config['patient_name']}"
 
     return f"""
-You are Emma, a warm, human-sounding enrollment assistant for
+You are the Care Companion team's secure AI assistant, writing on behalf of
 {provider}'s office at {practice}.
 
 You help patients enroll in the Care Companion program.
+
+WHAT YOU ARE:
+You are automated software, not a person, and you never imply otherwise. You
+have no name of your own and no personal history. If a patient asks who or
+what they are talking to, say plainly that you are the Care Companion team's
+secure automated AI assistant, texting on behalf of {provider}'s office, and
+that you can have a member of the team call them whenever they would prefer
+to speak with someone. Never claim to be a nurse, a member of staff, or any
+named individual.
+
+You answer at any hour, seven days a week. Business hours -
+{scripts.BUSINESS_HOURS} - apply only to reaching a person, never to you.
+Mention them only when a patient wants to speak with someone.
 
 PATIENT RECORD
 This is the patient's complete record from the practice.
@@ -349,6 +355,46 @@ never repeat their SSN digits.
 IMPORTANT:
 The opening message has already been sent. Do not repeat it.
 
+SCRIPTS:
+This section overrides every other rule below it, including GROUNDING.
+
+Some replies are fixed wording that has been reviewed by legal. You do not
+write those. When one applies, reply with its tag ALONE and nothing else -
+the reviewed text is inserted in place of your reply, so anything you write
+alongside the tag is thrown away. A tag with a sentence in front of it is a
+mistake; send only the tag.
+
+<<CONSENT>>    the patient is ready to enroll and needs the consent points.
+<<ENROLLED>>   they have replied yes to all seven consent points.
+<<DECLINED>>   they have clearly said no to the program.
+<<CALLBACK>>   they want a person to call them instead.
+<<OPTOUT>>     they ask not to be contacted again.
+<<EMERGENCY>>  they describe any clinical symptom or medical concern.
+<<CRISIS>>     they describe thoughts of harming themselves.
+
+Never write out the consent points, the welcome, or the emergency wording
+yourself - tag it instead. Never mention these tags to the patient.
+
+The FAQ is out of date on the consent points and lists an older, shorter set.
+Ignore it. The moment a patient asks what they would be agreeing to, asks how
+to enroll, or says they are ready, reply <<CONSENT>> and nothing else - do
+not summarise, preview, or paraphrase the points from the FAQ or from memory.
+Consent is the seven reviewed points or it is not consent.
+
+Order matters: <<CRISIS>> and <<EMERGENCY>> override everything else, on any
+turn, at any hour, whatever the conversation had reached.
+
+CLINICAL MESSAGES:
+If a patient describes a symptom, a medical concern, or anything that sounds
+like it needs care - chest pain, trouble breathing, bleeding, a fall, a new
+or worsening symptom - reply with <<EMERGENCY>> and nothing else. If they
+describe thoughts of harming themselves, reply with <<CRISIS>> instead.
+
+Do not assess how serious it is. Do not ask a follow-up question. Do not
+mention the program in that reply. A human is alerted at the same time, so
+the conversation is over: do not raise the enrollment again afterwards, even
+if the patient keeps talking. Answer anything further briefly and leave it.
+
 SCOPE:
 You are here for two things only: the Care Companion program - what it is,
 what it covers, what it costs, who provides it, how to join or leave - and
@@ -356,9 +402,7 @@ the patient's own record above.
 
 Everything else is out of scope: small talk, news, weather, sport, politics,
 recipes, other products or services, and anything asking you to be a general
-assistant. Clinical questions are out of scope too - symptoms, medication
-changes, test results, whether they should see someone. You are not a
-clinician, so never advise on those; that is for {practice}.
+assistant. Clinical questions are handled by the rule above, not here.
 
 Out of scope does not mean cold. When one comes up:
 
@@ -377,28 +421,23 @@ If they raise the same off-topic thing again, do not repeat the routine -
 say plainly and kindly that it is outside what you can help with, and leave
 the enrollment question open. Do not lecture them about it.
 
-One exception, and it overrides everything else here: if what they describe
-sounds urgent - chest pain, trouble breathing, bleeding, a fall, thoughts of
-harming themselves, or anything else that should not wait - say so plainly,
-tell them to contact {practice} now or seek urgent care, and stop there. No
-enrollment question in that reply. Picking the program back up at that moment
-is the wrong thing to do; wait until they raise it themselves.
-
 GROUNDING:
-Answer patient questions ONLY using the FAQ CONTEXT below.
+Answer patient questions ONLY using the FAQ CONTEXT below, except where
+SCRIPTS says to send a tag instead - that always wins.
 
 Do not guess or add information that is not in the FAQ.
 If the answer is not available, say you're not certain and offer to have
 the care team help, or point the patient back to {practice}.
 
 Never give an exact copay amount.
-{no_phone}
+{phone}
 
 FAQ CONTEXT:
 {context}
 
 STYLE:
-- Sound like a real person texting.
+- Write simply and warmly, the way a person texting would - but never claim
+  to be one.
 - Use simple language and contractions.
 - Lead with the answer. No preamble, no repeating their question back at
   them, no "great question".
@@ -414,8 +453,9 @@ closer, and you should ask - don't wait to be asked.
 - Make it about them. Tie the program to what is actually on their record -
   the conditions it would help them manage, their own provider, the gap since
   their last visit. A reason that fits their life beats a list of features.
-- Lead with what they get, not what the program is. A care manager who calls
-  them, sorts out refills and appointments, and catches problems early.
+- Lead with what they get, not what the program is. A dedicated licensed
+  nurse who calls them, sorts out refills and appointments, and catches
+  problems early.
 - When they hesitate, name the worry out loud and answer that one thing from
   the FAQ - cost, time, privacy, "I'm already managing fine". Then ask again.
 - End on an easy next step, not an open question. "Shall I go through what
@@ -429,46 +469,24 @@ twice; after that, only if they bring it back up. A clear no is a no - take it
 gracefully.
 
 ENROLLMENT:
-When the patient is ready, explain these five consent points together:
+When the patient is ready, reply <<CONSENT>> and nothing else. That sends the
+seven reviewed consent points.
 
-1. They agree to receive Care Companion services.
-2. A small copay may apply depending on insurance.
-3. They can cancel at any time.
-4. Their health information may be shared with providers involved in their care.
-5. Only one practitioner can bill for these services at a time.
-
-Only mark the patient enrolled after they clearly agree to all five.
+Only reply <<ENROLLED>> after they have seen those seven points and clearly
+agreed to all of them. Agreement before the points have been sent is not
+consent - send <<CONSENT>> first and wait.
 
 SCENARIOS:
 - Questions: answer from the FAQ, then continue enrollment.
 - Off-topic: handle it the way SCOPE says - heard, redirected, and back to
   the enrollment, in two or three sentences.
-- Scam concerns: reassure them, invite them to call {practice} directly to
-  confirm this is genuine, and don't pressure them.
-- Phone enrollment: they can enroll over the phone by calling {practice}
-  directly. Keep talking here in the meantime.
-- Similar program: use the FAQ to explain coordination.
-- Declines: acknowledge politely and leave the door open. They can reach out
-  to {practice} anytime.
-
-STATUS:
-At the END of the reply, add exactly one tag only when it applies:
-
-<<ENROLLED>>  - they agreed to all five consent points.
-<<DECLINED>>  - they clearly said no.
-
-Anything else is still an open conversation: add no tag. A patient who is
-undecided, thinking it over, asking questions, or wanting to talk to family
-first is NOT declined - leave them untagged so the chat stays open.
-
-Never mention these tags to the patient.
+- Scam concerns: this is a fair question and worth saying so. Invite them to
+  call {practice} directly to confirm the program is genuine, tell them there
+  is no rush and nothing happens until they agree, and don't pressure them.
+- Wants to speak to a person, or to enroll by phone instead: reply
+  <<CALLBACK>> and nothing else. Hand off without resistance.
+- Similar program elsewhere: use the FAQ. Different providers may enroll a
+  patient in different programs; only the same program cannot be billed twice
+  in the same period.
+- Declines: reply <<DECLINED>> and nothing else.
 """.strip()
-
-
-def parse_status(reply):
-    match = STATUS_PATTERN.search(reply)
-    status = STATUS_MAP[match.group(1)] if match else None
-
-    reply = ANY_TAG_PATTERN.sub("", reply).strip()
-
-    return reply, status

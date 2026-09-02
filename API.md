@@ -87,7 +87,37 @@ base, not per-practice.
 
 ---
 
-## 3. The response envelope
+## 3. Scripted replies
+
+Some replies are not generated. The assistant decides which situation applies
+and the backend substitutes wording reviewed by legal
+(`Care_Companion_AI_Enrollment_Scripts_Refined_8.28.26`), so the patient always
+sees the approved text rather than a paraphrase of it.
+
+| Situation | What the patient gets | Effect on the record |
+|---|---|---|
+| Opening message | Template 1, sent by `/chat/start` | — |
+| Ready to enroll | The seven consent points | — |
+| Agrees to all seven | Welcome + care-manager promise | `status: enrolled`, `consented_at`, `consent_version` |
+| Declines | Decline close, no further contact | `status: declined` |
+| Wants a call | Callback acknowledgement | `status: callback` |
+| Says STOP | Opt-out acknowledgement | `status: optedout` |
+| Reports a symptom | 911 / emergency-room script | **`alert_at` set** |
+| Mentions self-harm | 988 Suicide and Crisis Lifeline script | **`alert_at` set** |
+
+**`alert_at` needs a human.** It is stamped the moment a patient describes a
+clinical symptom, at any hour, and the assistant stops selling the programme
+for the rest of that conversation. Nothing pages anyone yet, so poll
+`GET /api/chat/conversations` for records with a non-null `alert_at` and work
+that queue.
+
+**STOP is handled without the model.** A message that is only `STOP`,
+`UNSUBSCRIBE`, `CANCEL`, `QUIT` or `END` opts the patient out immediately and
+never reaches OpenAI.
+
+---
+
+## 4. The response envelope
 
 **Every** response — success or failure — comes back in the same shape. Read
 `success` to branch, `result` for the payload, `message` for something you can
@@ -176,13 +206,13 @@ async function call(path, { method = "GET", body } = {}) {
 
 ---
 
-## 4. Endpoint summary
+## 5. Endpoint summary
 
 | # | Method | Path | Purpose |
 |---|---|---|---|
 | 1 | `GET`  | `/api/chat/patients` | List every remote patient from the portal |
 | 2 | `POST` | `/api/chat/start` | Open a chat for a patient (sends the email link) |
-| 3 | `POST` | `/api/chat/message` | Send a patient message, get Emma's reply |
+| 3 | `POST` | `/api/chat/message` | Send a patient message, get the assistant's reply |
 | 4 | `GET`  | `/api/chat/conversations` | List enrollment records (optionally per patient) |
 | 5 | `GET`  | `/api/chat/conversations/{ident}` | Read a transcript, or one patient's records |
 | 6 | `POST` | `/api/knowledge/search` | Search the FAQ knowledge base (RAG, for testing) |
@@ -191,9 +221,9 @@ Endpoints 1–5 require the `X-Tenant` header; 6 does not.
 
 ---
 
-## 5. Chat endpoints
+## 6. Chat endpoints
 
-### 5.1 — List patients
+### 6.1 — List patients
 
 Every remote patient held in the tenant's portal, newest capture first. This is
 what you populate the "pick a patient" screen with.
@@ -246,11 +276,11 @@ X-Tenant: https://primecare.ran-ai.co
 
 ---
 
-### 5.2 — Start a chat
+### 6.2 — Start a chat
 
 Opens a new conversation for one patient. This does several things at once:
 creates/refreshes the enrollment record, opens an OpenAI conversation, writes
-Emma's opening message, and **emails the patient their chat link**.
+the opening message, and **emails the patient their chat link**.
 
 ```
 POST /api/chat/start
@@ -288,7 +318,7 @@ X-Tenant: https://primecare.ran-ai.co
     "messages": [
       {
         "role": "assistant",
-        "text": "Hi Jane! This is Emma from Dr. Alan Smith's office at Prime Care Clinic. ...",
+        "text": "Hi Jane Doe, this is the Care Companion team's secure AI assistant, texting on behalf of Dr. Alan Smith at Prime Care Clinic. ...",
         "created_at": "2025-08-30T10:15:02.311Z"
       }
     ]
@@ -304,18 +334,22 @@ X-Tenant: https://primecare.ran-ai.co
 | `conv_ids` | string[] | Every conversation ever opened for this patient, oldest first |
 | `patient_id` | string \| null | The portal capture id |
 | `patient_name` | string | |
-| `status` | string | `"active"` \| `"enrolled"` \| `"declined"` |
+| `status` | string | `"active"` \| `"enrolled"` \| `"declined"` \| `"callback"` \| `"optedout"` |
 | `chat_link` | string | `<tenant subdomain>/chat/<conv_id>` — the link mailed to the patient |
 | `email` | string | Patient's email, `""` if none on file |
 | `email_sent` | boolean | `false` if the mail failed; **the chat is still valid** |
 | `email_error` | string | Why it failed, `""` when it went. No address on file, or a malformed one |
+| `practice_phone` | string | The practice's number, as the emergency script gives it |
+| `consented_at` | string \| null | When the patient agreed to all seven consent points |
+| `consent_version` | string | Which wording they agreed to, e.g. `"2026-08-28"` |
+| `alert_at` | string \| null | **Set when the patient reported a clinical symptom.** A human owes them a follow-up |
 | `messages` | Message[] | The transcript so far — one assistant opener |
 
-**Message object** (used here and in 5.5)
+**Message object** (used here and in 6.5)
 
 | Field | Type | Notes |
 |---|---|---|
-| `role` | string | `"assistant"` (Emma) or `"user"` (patient) |
+| `role` | string | `"assistant"` or `"user"` (patient) |
 | `text` | string | The message body |
 | `created_at` | string | ISO 8601 UTC timestamp |
 
@@ -334,9 +368,9 @@ X-Tenant: https://primecare.ran-ai.co
 
 ---
 
-### 5.3 — Send a message
+### 6.3 — Send a message
 
-Sends one patient message and returns Emma's reply. This is the main chat loop.
+Sends one patient message and returns the assistant's reply. This is the main chat loop.
 
 ```
 POST /api/chat/message
@@ -375,7 +409,7 @@ X-Tenant: https://primecare.ran-ai.co
 | Field | Type | Notes |
 |---|---|---|
 | `conv_id` | string | Echoed back |
-| `response` | string | Emma's reply — render this as the assistant bubble |
+| `response` | string | The assistant's reply — render this as the assistant bubble |
 | `status` | string | The chat status after this turn |
 
 **Status values**
@@ -391,7 +425,7 @@ closing note on `declined`. A patient who is undecided or wants to talk to
 family first stays `active`, so keep the composer open until the status
 actually changes.
 
-> Emma emits internal tags like `<<ENROLLED>>` in her raw output — these are
+> The assistant emits internal tags like `<<ENROLLED>>` in its raw output — these are
 > **stripped server-side**. `response` is always clean text, safe to render.
 
 **Other responses**
@@ -404,7 +438,7 @@ actually changes.
 
 ---
 
-### 5.4 — List conversations
+### 6.4 — List conversations
 
 Every enrollment record that has at least one conversation opened. Use it for an
 admin/dashboard list, or filter to one patient to read their current status.
@@ -472,7 +506,7 @@ X-Tenant: https://primecare.ran-ai.co
 
 ---
 
-### 5.5 — Read a conversation (transcript)
+### 6.5 — Read a conversation (transcript)
 
 One route, two behaviours, decided by what `{ident}` looks like:
 
@@ -484,7 +518,7 @@ X-Tenant: https://primecare.ran-ai.co
 | `{ident}` is… | You get back | `message` |
 |---|---|---|
 | An OpenAI conversation id (e.g. `conv_abc123`) | The **transcript** — an array of messages | `"Transcript retrieved successfully."` |
-| A 24-char Mongo ObjectId (a `patient_id`) | The same array as 5.4, filtered to that patient | `"Conversations retrieved successfully."` |
+| A 24-char Mongo ObjectId (a `patient_id`) | The same array as 6.4, filtered to that patient | `"Conversations retrieved successfully."` |
 
 **Response — 200 (transcript form)**
 
@@ -497,7 +531,7 @@ X-Tenant: https://primecare.ran-ai.co
   "result": [
     {
       "role": "assistant",
-      "text": "Hi Jane! This is Emma from Dr. Alan Smith's office...",
+      "text": "Hi Jane Doe, this is the Care Companion team's secure AI assistant...",
       "created_at": "2025-08-30T10:15:02.311Z"
     },
     {
@@ -528,11 +562,11 @@ Messages are ordered oldest first, so render them top-to-bottom as-is.
 
 ---
 
-## 6. Knowledge endpoint
+## 7. Knowledge endpoint
 
-### 6.1 — Search the FAQ
+### 7.1 — Search the FAQ
 
-Semantic search over the Care Companion FAQ (embeddings, stored in MongoDB). Emma calls
+Semantic search over the Care Companion FAQ (embeddings, stored in MongoDB). The assistant calls
 this internally on every turn; the endpoint is exposed mainly for testing and
 for any "browse the FAQ" UI.
 
@@ -578,7 +612,7 @@ POST /api/knowledge/search
 | `id` | string | Chunk id |
 | `category` | string | FAQ section it came from |
 | `question` | string | |
-| `answer` | string | May still contain placeholders such as `[Provider name]` — those are only filled in when Emma uses the chunk, not here |
+| `answer` | string | May still contain placeholders such as `[Provider name]` — those are only filled in when the assistant uses the chunk, not here |
 | `score` | number | Cosine similarity, rounded to 4dp. Higher is more relevant |
 
 **Other responses**
@@ -591,7 +625,7 @@ POST /api/knowledge/search
 
 ---
 
-## 7. Typical frontend flows
+## 8. Typical frontend flows
 
 ### A. Staff dashboard — start a chat
 
@@ -626,12 +660,13 @@ const turn = await call("/chat/message", {
 
 ```
 GET /api/chat/conversations?patient_id={id}   → result[0].status
-                                              → "enrolled" | "declined" | "active"
+                                              → "enrolled" | "declined" | "callback"
+                             → "optedout" | "active"
 ```
 
 ---
 
-## 8. Integration notes / gotchas
+## 9. Integration notes / gotchas
 
 1. **No auth, but `X-Tenant` is mandatory.** No tokens and no cookies, and
    CORS is wide open (`CORS_ALLOW_ALL_ORIGINS = True`), so browser calls work
@@ -643,7 +678,7 @@ GET /api/chat/conversations?patient_id={id}   → result[0].status
 3. **Always check `success`, not just the HTTP code.** Some "empty" cases come
    back as `200` with `success: true` and an empty `result`.
 4. **`conv_id` is the chat key, `patient_id` is the person key.** Don't mix
-   them — except in 5.5, which deliberately accepts either.
+   them — except in 6.5, which deliberately accepts either.
 5. **`/chat/message` is slow.** It does an embedding call, a FAQ search and
    an OpenAI completion. Budget several seconds and show a typing indicator;
    disable the send button while a request is in flight.
@@ -656,5 +691,5 @@ GET /api/chat/conversations?patient_id={id}   → result[0].status
 8. **Unknown routes return JSON, not HTML** — `404` with
    `"That endpoint does not exist."`. A wrong method returns `405` in the same
    envelope.
-9. **Emma's reply is plain text**, possibly multi-line. Render newlines
+9. **The assistant's reply is plain text**, possibly multi-line. Render newlines
    (`white-space: pre-wrap`), and escape it — do not inject it as HTML.

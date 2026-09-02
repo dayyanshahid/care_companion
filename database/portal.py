@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from utils.enums import CaptureType, Recency
 
 COLLECTION = "onsiteenrollmentcaptures"
+PRACTICES = "practices"
 REMOTE = {"type": CaptureType.remote.value}
 
 _clients = {}
@@ -43,6 +44,34 @@ def get_patient(tenant, patient_id):
         return captures(tenant).find_one({"_id": object_id, **REMOTE})
     except Exception as exc:
         raise PortalError(str(exc)) from exc
+
+
+def practice_phone(tenant, capture):
+    practice_id = capture.get("practiceId")
+
+    if not practice_id:
+        return ""
+
+    try:
+        found = captures(tenant).database[PRACTICES].find_one(
+            {"_id": ObjectId(practice_id)}, {"phone": 1, "contactPhone": 1}
+        )
+    except Exception:
+        return ""
+
+    if not found:
+        return ""
+
+    return format_phone(found.get("phone") or found.get("contactPhone") or "")
+
+
+def format_phone(number):
+    digits = "".join(c for c in number if c.isdigit())
+
+    if len(digits) != 10:
+        return number.strip()
+
+    return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
 
 
 def full_name(capture):

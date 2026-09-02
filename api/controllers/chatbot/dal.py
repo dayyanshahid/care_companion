@@ -1,4 +1,5 @@
 from bson import ObjectId
+from django.utils import timezone
 
 from database import portal
 from database.models import Message, RemoteEnrollement
@@ -11,6 +12,7 @@ CAPTURED_FIELDS = (
     "patient_name",
     "provider",
     "practice",
+    "practice_phone",
     "recency",
 )
 
@@ -30,6 +32,7 @@ def upsert_chat(tenant, capture):
         "patient_name": portal.full_name(capture),
         "provider": capture.get("primaryProviderName", ""),
         "practice": capture.get("practiceName", ""),
+        "practice_phone": portal.practice_phone(tenant, capture),
         "recency": portal.recency(capture),
     }
 
@@ -73,6 +76,20 @@ def add_conversation(chat, conv_id):
 def set_chat_status(chat, status):
     chat.status = status
     chat.save(update_fields=["status", "updated_at"])
+
+def record_consent(chat, version):
+    chat.consented_at = timezone.now()
+    chat.consent_version = version
+    chat.save(update_fields=["consented_at", "consent_version", "updated_at"])
+
+def raise_alert(chat):
+    if chat.alert_at:
+        return chat.alert_at
+
+    chat.alert_at = timezone.now()
+    chat.save(update_fields=["alert_at", "updated_at"])
+
+    return chat.alert_at
 
 def delete_chat(chat):
     chat.delete()
