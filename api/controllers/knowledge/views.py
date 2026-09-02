@@ -32,3 +32,4 @@ def search_knowledge(request):
         return Response(
             response.success(messages["noSearchResults"], data=result)
         )
+

@@ -1,6 +1,8 @@
 """Django settings for the Care Companion enrollment backend."""
 import os
 from pathlib import Path
+
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,6 +25,8 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-tenant")
 
 ROOT_URLCONF = "project.urls"
 WSGI_APPLICATION = "project.wsgi.application"
