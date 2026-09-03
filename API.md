@@ -3,7 +3,7 @@
 Everything the frontend needs to integrate with the Care Companion enrollment
 backend. There is no authentication on any endpoint, CORS is open to all
 origins, and every request/response body is JSON. Every `/api/chat/` request
-must name its tenant — see section 2.
+except `/chat/message` must name its tenant — see section 2.
 
 ---
 
@@ -39,9 +39,11 @@ from one header:
 X-Tenant: https://primecare.ran-ai.co
 ```
 
-It is **required on every `/api/chat/` endpoint**. There is no default tenant
-— without the header nothing is served, because guessing one would read
-another practice's patients.
+It is **required on every `/api/chat/` endpoint except `POST /chat/message`**.
+There is no default tenant — without the header nothing is served, because
+guessing one would read another practice's patients. `/chat/message` is the
+exception: a `conv_id` names one conversation on its own, so the patient, who
+only ever has their link, needs no header.
 
 **What to send.** The subdomain the frontend is running on. The backend looks
 it up in the central admin portal's `tenants` collection and reads that
@@ -79,11 +81,11 @@ no subdomain is not served at all — it is skipped by the registry, and naming
 it returns `404` like any unknown tenant.
 
 Nothing rides in the query string, because the host already says which tenant
-it is. Route `/chat/:conv_id`, read the conversation off the path, and send
-`location.origin` as `X-Tenant`.
+it is. Route `/chat/:conv_id` and read the conversation off the path.
 
-`POST /api/knowledge/search` needs no tenant: the FAQ is one shared knowledge
-base, not per-practice.
+`POST /api/chat/message` and `POST /api/knowledge/search` need no tenant: the
+first is reached by conversation id, and the FAQ is one shared knowledge base,
+not per-practice.
 
 ---
 
@@ -217,7 +219,7 @@ async function call(path, { method = "GET", body } = {}) {
 | 5 | `GET`  | `/api/chat/conversations/{ident}` | Read a transcript, or one patient's records |
 | 6 | `POST` | `/api/knowledge/search` | Search the FAQ knowledge base (RAG, for testing) |
 
-Endpoints 1–5 require the `X-Tenant` header; 6 does not.
+Endpoints 1, 2, 4 and 5 require the `X-Tenant` header; 3 and 6 do not.
 
 ---
 
@@ -374,8 +376,9 @@ Sends one patient message and returns the assistant's reply. This is the main ch
 
 ```
 POST /api/chat/message
-X-Tenant: https://primecare.ran-ai.co
 ```
+
+No `X-Tenant` header — the `conv_id` identifies the chat by itself.
 
 **Request body**
 
@@ -668,13 +671,15 @@ GET /api/chat/conversations?patient_id={id}   → result[0].status
 
 ## 9. Integration notes / gotchas
 
-1. **No auth, but `X-Tenant` is mandatory.** No tokens and no cookies, and
-   CORS is wide open (`CORS_ALLOW_ALL_ORIGINS = True`), so browser calls work
-   from any origin — but every `/api/chat/` call must carry `X-Tenant`, or it
-   is refused with `400`. See section 2.
-2. **Tenants are isolated.** A `conv_id` or `patient_id` belonging to one
-   tenant is invisible under another — the same id sent with the wrong
-   `X-Tenant` returns `404`, not somebody else's data.
+1. **No auth, but `X-Tenant` is mostly mandatory.** No tokens and no cookies,
+   and CORS is wide open (`CORS_ALLOW_ALL_ORIGINS = True`), so browser calls
+   work from any origin — but every `/api/chat/` call except `/chat/message`
+   must carry `X-Tenant`, or it is refused with `400`. See section 2.
+2. **Tenants are isolated, except by conversation id.** A `patient_id`
+   belonging to one tenant is invisible under another — the same id sent with
+   the wrong `X-Tenant` returns `404`, not somebody else's data. `/chat/message`
+   is looked up by `conv_id` alone, which is a uuid and so names one chat
+   across all tenants.
 3. **Always check `success`, not just the HTTP code.** Some "empty" cases come
    back as `200` with `success: true` and an empty `result`.
 4. **`conv_id` is the chat key, `patient_id` is the person key.** Don't mix

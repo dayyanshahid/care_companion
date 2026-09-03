@@ -98,8 +98,14 @@ def start_chat(tenant, patient_id):
     }
 
 
-def send_message(tenant, conv_id, text):
-    chat = dal.find_chat_by_conversation(tenant, conv_id)
+def send_message(conv_id, text):
+    """Answer a patient message.
+
+    The conversation id identifies the chat on its own, so this is the one
+    chat endpoint that needs no tenant: the patient follows a link, not a
+    portal session.
+    """
+    chat = dal.find_chat_by_conversation(conv_id)
 
     if not chat:
         return None

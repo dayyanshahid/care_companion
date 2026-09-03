@@ -43,13 +43,10 @@ def start_chat(request):
 
 @api_view(["POST"])
 def send_message(request):
-    tenant = tenants.from_request(request)
-
     payload = ChatMessagePayloadSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
     result = services.send_message(
-        tenant,
         payload.validated_data["conv_id"],
         payload.validated_data["text"],
     )
