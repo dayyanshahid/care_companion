@@ -43,23 +43,16 @@ def start_chat(request):
 
 @api_view(["POST"])
 def send_message(request):
+    """One stateless turn. Nothing is looked up, so there is nothing to miss."""
     payload = ChatMessagePayloadSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
-    result = services.send_message(
-        payload.validated_data["conv_id"],
-        payload.validated_data["text"],
+    return Response(
+        response.success(
+            messages["messageSent"],
+            data=services.send_message(payload.validated_data),
+        )
     )
-
-    if result:
-        return Response(
-            response.success(messages["messageSent"], data=result)
-        )
-    else:
-        return Response(
-            response.error(messages["chatNotFound"], HttpStatus.notFound),
-            status=HttpStatus.notFound,
-        )
 
 
 @api_view(["GET"])

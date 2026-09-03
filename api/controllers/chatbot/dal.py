@@ -55,16 +55,6 @@ def upsert_chat(tenant, capture):
 
     return chat, False
 
-def find_chat_by_conversation(conv_id):
-    """The chat holding this conversation, whichever tenant it belongs to.
-
-    Conversation ids are uuids, so one names at most one chat and the caller
-    need not know the tenant to reach it.
-    """
-    return RemoteEnrollement.objects.filter(
-        conv_ids__contains=[conv_id]
-    ).first()
-
 def find_started_chats(tenant, patient_id=None):
     chats = RemoteEnrollement.objects.filter(
         tenant=tenant["key"], conv_ids__len__gt=0

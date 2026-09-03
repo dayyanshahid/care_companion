@@ -1,0 +1,117 @@
+{
+  "info": {
+    "name": "Care Companion - Stateless Chat",
+    "description": "POST /api/chat/message is stateless: the patient record, the conversation so far and the message all arrive in the body. No X-Tenant header, no auth, nothing stored.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000/api" },
+    { "key": "convId", "value": "conv_postman_demo" }
+  ],
+  "item": [
+    {
+      "name": "0. Health check - is the FAQ ingested?",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/knowledge/search", "host": ["{{baseUrl}}"], "path": ["knowledge", "search"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"how much does it cost\"\n}"
+        },
+        "description": "Run this first. If it 502s, the FAQ is not ingested and every chat message will 502 too. Fix with: python manage.py ingest_faq \"../FAQ_Handbook_Care_Companion_Enrollment Document.docx\""
+      }
+    },
+    {
+      "name": "1. Turn one - a question",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"fullName\": \"Jane Doe\",\n  \"dob\": \"1958-04-12\",\n  \"gender\": \"Female\",\n  \"ehrId\": \"EHR-8842\",\n  \"mobilePhone\": \"(312) 555-0134\",\n  \"email\": \"jane.doe@example.com\",\n  \"practiceName\": \"Lakeview Family Medicine\",\n  \"practice_phone\": \"(312) 555-0100\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"careManager\": \"Maria Lopez\",\n  \"appointmentDate\": \"2026-08-01\",\n  \"dataAge\": \"1 month\",\n\n  \"text\": \"what does this cost me?\"\n}"
+        },
+        "description": "Expect 200, tag \"\", status \"active\". The reply should quote the FAQ on coverage and end with one question."
+      }
+    },
+    {
+      "name": "2. Turn two - ready to enroll (expects CONSENT)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Lakeview Family Medicine\",\n  \"practice_phone\": \"(312) 555-0100\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"careManager\": \"Maria Lopez\",\n  \"dataAge\": \"1 month\",\n\n  \"text\": \"yes, I am ready to sign up\",\n\n  \"history\": [\n    { \"role\": \"user\", \"content\": \"what does this cost me?\" },\n    { \"role\": \"assistant\", \"content\": \"Covered by Medicare and most commercial insurance. Shall I go through what you would be agreeing to?\" }\n  ]\n}"
+        },
+        "description": "Expect tag \"CONSENT\" and the seven reviewed points verbatim, with the name and provider filled in. The model's own wording is discarded."
+      }
+    },
+    {
+      "name": "3. Turn three - yes to all seven (expects ENROLLED)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Lakeview Family Medicine\",\n  \"practice_phone\": \"(312) 555-0100\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"dataAge\": \"1 month\",\n\n  \"text\": \"YES, I agree to all seven\",\n\n  \"history\": [\n    { \"role\": \"user\", \"content\": \"yes, I am ready to sign up\" },\n    { \"role\": \"assistant\", \"content\": \"Before we enroll you, Jane Doe, please read these seven points and reply YES to confirm you understand and agree to all of them: 1. Our care team will support you between visits, on behalf of Dr. Alan Reyes. 2. There may be a copay or deductible, depending on your insurance plan. 3. Only one practitioner can bill for this service in a given period. 4. Your health information may be shared with authorized Care Companion providers. 5. Participation is voluntary and you can cancel at any time. 6. If you receive a monitoring device and later decide against it, it is your responsibility to return it to the office within 7 days. 7. You agree to receive program communications by phone, email, and text. Reply YES to confirm all seven.\" }\n  ]\n}"
+        },
+        "description": "Expect tag \"ENROLLED\", status \"enrolled\", consent_version \"2026-08-28\". Without the seven points in history the model will not enroll - that is the rule working."
+      }
+    },
+    {
+      "name": "4. Clinical message (expects EMERGENCY + alert true)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Lakeview Family Medicine\",\n  \"practice_phone\": \"(312) 555-0100\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"dataAge\": \"1 month\",\n\n  \"text\": \"I have had chest pain since this morning\"\n}"
+        },
+        "description": "Expect tag \"EMERGENCY\" and alert true. Nothing pages a human any more - your caller must act on alert:true itself."
+      }
+    },
+    {
+      "name": "5. Opt out (no OpenAI call at all)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n  \"fullName\": \"Jane Doe\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"text\": \"STOP\"\n}"
+        },
+        "description": "Expect tag \"OPTOUT\", status \"optedout\". Short circuits before the model, so it is instant and free."
+      }
+    },
+    {
+      "name": "6. Minimum payload - only the two required fields",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\",\n  \"text\": \"what is this about?\"\n}"
+        },
+        "description": "Expect 200. Provider and practice fall back to \"your care team\" and the record reads \"(No patient record was sent.)\"."
+      }
+    },
+    {
+      "name": "7. Validation error",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/chat/message", "host": ["{{baseUrl}}"], "path": ["chat", "message"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"{{convId}}\"\n}"
+        },
+        "description": "Expect 400 with result.text = [\"This field is required.\"]."
+      }
+    }
+  ]
+}

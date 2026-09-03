@@ -31,7 +31,6 @@ SCRIPTED = {
     "CRISIS": (scripts.CRISIS, None),
 }
 
-# The two that end the conversation and put a person on it.
 ALERTING = ("EMERGENCY", "CRISIS")
 
 TAG_PATTERN = re.compile(r"<<(%s)>>" % "|".join(SCRIPTED))
@@ -42,6 +41,20 @@ ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
 OPT_OUT_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "quit", "end"}
 
 HISTORY_LIMIT = 40
+
+# The record, in the order the model reads it. Name is added ahead of these.
+PROFILE_FIELDS = (
+    ("Date of birth", "dob"),
+    ("Gender", "gender"),
+    ("Patient ID", "ehrId"),
+    ("Mobile", "mobilePhone"),
+    ("Email", "email"),
+    ("Practice", "practiceName"),
+    ("Provider", "providerName"),
+    ("Care manager", "careManager"),
+    ("Last appointment", "appointmentDate"),
+    ("Time since last visit", "dataAge"),
+)
 
 CONFIG_FIELDS = (
     "patient_name",
@@ -98,27 +111,35 @@ def start_chat(tenant, patient_id):
     }
 
 
-def send_message(conv_id, text):
-    """Answer a patient message.
+def send_message(payload):
 
-    The conversation id identifies the chat on its own, so this is the one
-    chat endpoint that needs no tenant: the patient follows a link, not a
-    portal session.
-    """
-    chat = dal.find_chat_by_conversation(conv_id)
+    config = payload_config(payload)
+    text = payload["text"]
 
-    if not chat:
-        return None
+    if is_opt_out(text):
+        return turn(payload, scripts.fill(scripts.OPT_OUT, config))
 
     try:
-        answer, status = reply_to(chat, conv_id, text)
+        answer = ask_openai(
+            prompt=build_system_prompt(config, retrieve_context(text, config)),
+            history=history(payload),
+        )
     except ChatServiceError as exc:
         raise build_error(
             messages["assistantUnavailable"], HttpStatus.badGateway, exc
         ) from exc
 
+    answer, tag = apply_script(answer, config)
+
+    if tag in ALERTING:
+        logger.warning("Chat %s: %s reported", payload["conv_id"], tag.lower())
+
+    return turn(payload, answer)
+
+
+def turn(payload, answer):
     return ChatMessageResponseSerializer(
-        {"conv_id": conv_id, "response": answer, "status": status}
+        {"conv_id": payload["conv_id"], "response": answer}
     ).data
 
 
@@ -190,60 +211,22 @@ def open_conversation(chat):
     return conv_id, opener
 
 
-def reply_to(chat, conv_id, text):
-    dal.create_message(chat, conv_id, MessageRole.user, text)
-
-    config = build_config(chat)
-
-    if is_opt_out(text):
-        answer = scripts.fill(scripts.OPT_OUT, config)
-        dal.set_chat_status(chat, ChatStatus.optedOut)
-        dal.create_message(chat, conv_id, MessageRole.assistant, answer)
-
-        return answer, chat.status
-
-    context = retrieve_context(text, config)
-
-    answer = ask_openai(
-        prompt=build_system_prompt(config, context),
-        history=history(chat, conv_id),
-    )
-
-    answer = apply_script(chat, answer, config)
-
-    dal.create_message(chat, conv_id, MessageRole.assistant, answer)
-
-    return answer, chat.status
-
-
 def is_opt_out(text):
     """True when the patient's whole message is an opt-out word."""
     return "".join(c for c in text.lower() if c.isalpha()) in OPT_OUT_WORDS
 
 
-def apply_script(chat, answer, config):
+def apply_script(answer, config):
+
     match = TAG_PATTERN.search(answer)
 
     if not match:
-        return ANY_TAG_PATTERN.sub("", answer).strip()
+        return ANY_TAG_PATTERN.sub("", answer).strip(), None
 
     tag = match.group(1)
-    script, status = SCRIPTED[tag]
+    script, _ = SCRIPTED[tag]
 
-    if status:
-        dal.set_chat_status(chat, status)
-
-    if status is ChatStatus.enrolled:
-        dal.record_consent(chat, scripts.CONSENT_VERSION)
-
-    if tag in ALERTING:
-        raised = dal.raise_alert(chat)
-        logger.warning(
-            "Chat %s: %s reported for patient %s, alert at %s",
-            chat.conv_id, tag.lower(), chat.patient_id, raised,
-        )
-
-    return scripts.fill(script, config)
+    return scripts.fill(script, config), tag
 
 
 def build_config(chat):
@@ -253,18 +236,76 @@ def build_config(chat):
     return config
 
 
+def payload_config(payload):
+    """Everything the prompt and the scripts personalise on."""
+    name = patient_name(payload)
+
+    return {
+        "patient_name": name,
+        "patient_profile": build_profile(payload, name),
+        "recency": read_recency(payload.get("dataAge")),
+        "provider": payload.get("providerName", ""),
+        "practice": payload.get("practiceName", ""),
+        "practice_phone": payload.get("practice_phone", ""),
+        "care_companion_phone": settings.CARE_COMPANION_PHONE,
+    }
+
+
+def patient_name(payload):
+    """fullName when the caller sent one, the two parts joined otherwise."""
+    full = (payload.get("fullName") or "").strip()
+
+    if full:
+        return full
+
+    parts = (payload.get("firstName"), payload.get("lastName"))
+
+    return " ".join(part for part in parts if part).strip()
+
+
+def build_profile(payload, name):
+    """The record as the model reads it - one labelled line per field sent."""
+    lines = [f"Name: {name}"] if name else []
+
+    lines += [
+        f"{label}: {payload[field]}"
+        for label, field in PROFILE_FIELDS
+        if payload.get(field)
+    ]
+
+    return "\n".join(lines)
+
+
+def read_recency(data_age):
+    """Recency from dataAge, which is either "1 month" or "12 month".
+
+    Read off the digits alone, so spacing and pluralisation do not matter.
+    Anything else - blank, missing, unrecognised - reads as the year.
+    """
+    months = "".join(c for c in (data_age or "") if c.isdigit())
+
+    return Recency.oneMonth if months == "1" else Recency.year
+
+
 def new_conversation_id():
     return f"conv_{uuid4().hex}"
 
 
-def history(chat, conv_id):
-    """The conversation so far, as the model reads it, oldest first."""
-    messages = list(dal.find_messages(chat.tenant, conv_id))
+def history(payload):
+    """The conversation as the model reads it, oldest first.
+
+    `history` holds the turns before this one; the message being answered is
+    appended here, so the caller never has to send it twice.
+    """
+    earlier = [
+        {"role": turn["role"], "content": turn["content"]}
+        for turn in payload.get("history") or []
+    ]
 
     return [
-        {"role": message.role, "content": message.text}
-        for message in messages[-HISTORY_LIMIT:]
-    ]
+        *earlier,
+        {"role": MessageRole.user, "content": payload["text"]},
+    ][-HISTORY_LIMIT:]
 
 
 def ask_openai(prompt, history):
@@ -318,7 +359,7 @@ def build_system_prompt(config, context):
     }.get(config.get("recency"), "The patient was last seen about one year ago.")
 
     context = context or "(No relevant FAQ was found.)"
-    profile = config.get("patient_profile") or f"Name: {config['patient_name']}"
+    profile = config.get("patient_profile") or "(No patient record was sent.)"
 
     return f"""
 You are the Care Companion team's secure AI assistant, writing on behalf of
@@ -346,17 +387,17 @@ This is the patient's complete record from the practice.
 
 {recency}
 
-Use it to speak to them personally and to answer questions about their own
-details - their provider, their care manager, their appointment, their
-insurance, the conditions the programme would help them manage. `codes` with
-status "chronic" are confirmed; "pending" ones are not yet theirs, so do not
-present them as diagnoses.
+Use it to speak to them personally, and answer plainly when they ask about
+their own details - their name, their date of birth, their provider, their
+care manager, their appointment, the gap since their last visit. This is
+their own information and they are entitled to it. Never refuse a question
+about their own record, and never tell a patient you cannot share personal
+information with them - it is their information, not someone else's.
 
-Never read the record out at them, never list their diagnoses unprompted, and
-never state anything about them that is not in the record above. It is their
-own information, so you may confirm a detail they ask about - but do not
-recite contact details, addresses or identifiers back at them unprompted, and
-never repeat their SSN digits.
+What you must not do is volunteer it. Never read the record out at them, and
+never state anything about them that is not in the record above. Answer the
+detail they asked for and leave the rest - do not recite contact details or
+identifiers they did not ask about.
 
 IMPORTANT:
 The opening message has already been sent. Do not repeat it.
@@ -457,8 +498,8 @@ Your job is to get the patient enrolled. Every reply should move them a step
 closer, and you should ask - don't wait to be asked.
 
 - Make it about them. Tie the program to what is actually on their record -
-  the conditions it would help them manage, their own provider, the gap since
-  their last visit. A reason that fits their life beats a list of features.
+  their own provider, their care manager, the gap since their last visit. A
+  reason that fits their life beats a list of features.
 - Lead with what they get, not what the program is. A dedicated licensed
   nurse who calls them, sorts out refills and appointments, and catches
   problems early.

@@ -15,8 +15,7 @@ OPENING = (
     "monitoring. The program is covered by Medicare, Medicare Advantage, and "
     "most commercial insurance. Reply YES if you'd like to hear more, or just "
     "reply with any question and I'll answer within a few minutes. I can also "
-    "arrange for someone from our team to call you. Reply STOP to opt out of "
-    "future messages."
+    "arrange for someone from our team to call you."
 )
 
 CONSENT = (
