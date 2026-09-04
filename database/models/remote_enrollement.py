@@ -28,8 +28,6 @@ class RemoteEnrollement(models.Model):
         choices=choices(ChatStatus),
         default=ChatStatus.active,
     )
-    consented_at = models.DateTimeField(null=True, blank=True)
-    consent_version = models.CharField(max_length=20, blank=True)
     alert_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

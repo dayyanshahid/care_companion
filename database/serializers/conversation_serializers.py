@@ -31,8 +31,6 @@ class ChatSerializer(serializers.ModelSerializer):
             "recency",
             "status",
             "practice_phone",
-            "consented_at",
-            "consent_version",
             "alert_at",
             "created_at",
             "updated_at",

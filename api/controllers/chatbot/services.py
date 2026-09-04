@@ -107,7 +107,7 @@ def start_chat(tenant, patient_id):
         "email": capture.get("email", ""),
         "email_sent": email_sent,
         "email_error": email_error,
-        "messages": transcript(tenant, conv_id),
+        "messages": transcript(conv_id),
     }
 
 
@@ -138,28 +138,36 @@ def send_message(payload):
 
 
 def turn(payload, answer):
+    """Store the exchange, then return the reply.
+
+    Both messages are written after the answer is settled, so a turn that
+    failed on the way out never leaves a patient message with no reply.
+    """
+    conv_id = payload["conv_id"]
+
+    dal.create_message(conv_id, MessageRole.user, payload["text"])
+    dal.create_message(conv_id, MessageRole.assistant, answer)
+
     return ChatMessageResponseSerializer(
-        {"conv_id": payload["conv_id"], "response": answer}
+        {"conv_id": conv_id, "response": answer}
     ).data
 
 
-def list_conversations(tenant, patient_id=None):
+def list_conversations(patient_id=None):
     if patient_id and not dal.is_object_id(patient_id):
         raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
 
     return ChatSerializer(
-        dal.find_started_chats(tenant, patient_id), many=True
+        dal.find_started_chats(patient_id), many=True
     ).data
 
 
-def read_conversation(tenant, ident):
+def read_conversation(ident):
+    """A patient id lists their chats; a conversation id reads one transcript."""
     if dal.is_object_id(ident):
-        return (
-            messages["conversationsRetrieved"],
-            list_conversations(tenant, ident),
-        )
+        return messages["conversationsRetrieved"], list_conversations(ident)
 
-    return messages["transcriptRetrieved"], transcript(tenant, ident)
+    return messages["transcriptRetrieved"], transcript(ident)
 
 
 def list_patients(tenant):
@@ -190,14 +198,14 @@ def deliver_chat_link(tenant, capture, chat, conv_id):
     return True, ""
 
 
-def transcript(tenant, conv_id):
+def transcript(conv_id):
     return [
         {
             "role": message.role,
             "text": message.text,
             "created_at": message.created_at,
         }
-        for message in dal.find_messages(tenant["key"], conv_id)
+        for message in dal.find_messages(conv_id)
     ]
 
 
@@ -206,7 +214,7 @@ def open_conversation(chat):
 
     opener = build_opener(build_config(chat))
 
-    dal.create_message(chat, conv_id, MessageRole.assistant, opener)
+    dal.create_message(conv_id, MessageRole.assistant, opener)
 
     return conv_id, opener
 
@@ -237,15 +245,16 @@ def build_config(chat):
 
 
 def payload_config(payload):
-    """Everything the prompt and the scripts personalise on."""
     name = patient_name(payload)
 
     return {
         "patient_name": name,
         "patient_profile": build_profile(payload, name),
         "recency": read_recency(payload.get("dataAge")),
-        "provider": payload.get("providerName", ""),
-        "practice": payload.get("practiceName", ""),
+        # The scripts name these mid-sentence, so a blank has to read as
+        # something rather than nothing - "on behalf of ." otherwise.
+        "provider": payload.get("providerName") or "your care team",
+        "practice": payload.get("practiceName") or "your care team",
         "practice_phone": payload.get("practice_phone", ""),
         "care_companion_phone": settings.CARE_COMPANION_PHONE,
     }
@@ -264,7 +273,6 @@ def patient_name(payload):
 
 
 def build_profile(payload, name):
-    """The record as the model reads it - one labelled line per field sent."""
     lines = [f"Name: {name}"] if name else []
 
     lines += [
@@ -277,11 +285,6 @@ def build_profile(payload, name):
 
 
 def read_recency(data_age):
-    """Recency from dataAge, which is either "1 month" or "12 month".
-
-    Read off the digits alone, so spacing and pluralisation do not matter.
-    Anything else - blank, missing, unrecognised - reads as the year.
-    """
     months = "".join(c for c in (data_age or "") if c.isdigit())
 
     return Recency.oneMonth if months == "1" else Recency.year
@@ -294,13 +297,26 @@ def new_conversation_id():
 def history(payload):
     """The conversation as the model reads it, oldest first.
 
-    `history` holds the turns before this one; the message being answered is
-    appended here, so the caller never has to send it twice.
+    The caller may replay the earlier turns itself. When it does not, they
+    come from the stored transcript for this conv_id - without them the model
+    cannot know it has already sent the consent points, and reads every "yes"
+    as a fresh request to enroll.
+
+    Either way the message being answered is appended here: it is not stored
+    until the reply is settled.
     """
-    earlier = [
-        {"role": turn["role"], "content": turn["content"]}
-        for turn in payload.get("history") or []
-    ]
+    replayed = payload.get("history")
+
+    if replayed:
+        earlier = [
+            {"role": turn["role"], "content": turn["content"]}
+            for turn in replayed
+        ]
+    else:
+        earlier = [
+            {"role": message.role, "content": message.text}
+            for message in dal.find_messages(payload["conv_id"])
+        ]
 
     return [
         *earlier,
@@ -323,6 +339,12 @@ def ask_openai(prompt, history):
 
 
 def retrieve_context(query, config):
+    """The FAQ behind an answer.
+
+    The FAQ still carries an older, shorter consent list. Telling the model
+    to ignore it is not enough - it answers from what it is shown - so the
+    superseded entries are dropped before the prompt ever sees them.
+    """
     try:
         results = knowledge.retrieve(
             query,
@@ -335,6 +357,7 @@ def retrieve_context(query, config):
         f"Q: {scripts.fill(chunk.question, config)}\n"
         f"A: {scripts.fill(chunk.answer, config)}"
         for chunk, _ in results
+        if not scripts.supersedes(chunk.question)
     )
 
 
@@ -516,12 +539,24 @@ twice; after that, only if they bring it back up. A clear no is a no - take it
 gracefully.
 
 ENROLLMENT:
-When the patient is ready, reply <<CONSENT>> and nothing else. That sends the
-seven reviewed consent points.
+This is a two-step handshake, and which step you are on is settled by one
+question: do the seven numbered points already appear in the conversation
+above? Check before you answer anything that sounds like agreement.
 
-Only reply <<ENROLLED>> after they have seen those seven points and clearly
-agreed to all of them. Agreement before the points have been sent is not
-consent - send <<CONSENT>> first and wait.
+NOT SENT YET - no earlier message of yours lists points 1 to 7. The patient
+is ready, asks how to join, or asks what they would be agreeing to: reply
+<<CONSENT>> and nothing else. Agreement at this stage is not consent - send
+the points and wait.
+
+ALREADY SENT - one of your earlier messages lists points 1 to 7. Never send
+them again, whatever the patient says. From here:
+  - a clear yes, "I agree", or "yes to all seven" is <<ENROLLED>>
+  - a no is <<DECLINED>>
+  - a question about a point gets a plain answer from the FAQ, then ask them
+    again if they are happy to confirm
+
+"Yes" after the points have been sent means they are agreeing to them. It is
+never a fresh request to see them.
 
 SCENARIOS:
 - Questions: answer from the FAQ, then continue enrollment.

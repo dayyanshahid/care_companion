@@ -2,8 +2,6 @@ import re
 
 BUSINESS_HOURS = "Monday to Friday, 8:00 AM to 5:00 PM CST"
 
-CONSENT_VERSION = "2026-08-28"
-
 
 OPENING = (
     "Hi [Patient Name], this is the Care Companion team's secure AI "

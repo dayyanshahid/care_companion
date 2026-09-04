@@ -43,7 +43,6 @@ def start_chat(request):
 
 @api_view(["POST"])
 def send_message(request):
-    """One stateless turn. Nothing is looked up, so there is nothing to miss."""
     payload = ChatMessagePayloadSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
@@ -57,10 +56,8 @@ def send_message(request):
 
 @api_view(["GET"])
 def list_conversations(request):
-    tenant = tenants.from_request(request)
-
     result = services.list_conversations(
-        tenant, request.query_params.get("patient_id")
+        request.query_params.get("patient_id")
     )
 
     if result:
@@ -75,9 +72,7 @@ def list_conversations(request):
 
 @api_view(["GET"])
 def read_conversation(request, ident):
-    tenant = tenants.from_request(request)
-
-    message, result = services.read_conversation(tenant, ident)
+    message, result = services.read_conversation(ident)
 
     if result:
         return Response(response.success(message, data=result))

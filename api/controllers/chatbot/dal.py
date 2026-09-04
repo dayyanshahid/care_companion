@@ -55,10 +55,8 @@ def upsert_chat(tenant, capture):
 
     return chat, False
 
-def find_started_chats(tenant, patient_id=None):
-    chats = RemoteEnrollement.objects.filter(
-        tenant=tenant["key"], conv_ids__len__gt=0
-    )
+def find_started_chats(patient_id=None):
+    chats = RemoteEnrollement.objects.filter(conv_ids__len__gt=0)
 
     if patient_id:
         chats = chats.filter(patient_id=ObjectId(patient_id))
@@ -72,11 +70,6 @@ def set_chat_status(chat, status):
     chat.status = status
     chat.save(update_fields=["status", "updated_at"])
 
-def record_consent(chat, version):
-    chat.consented_at = timezone.now()
-    chat.consent_version = version
-    chat.save(update_fields=["consented_at", "consent_version", "updated_at"])
-
 def raise_alert(chat):
     if chat.alert_at:
         return chat.alert_at
@@ -89,16 +82,16 @@ def raise_alert(chat):
 def delete_chat(chat):
     chat.delete()
 
-def create_message(chat, conv_id, role, text):
+def create_message(conv_id, role, text):
+    """One stored turn. The conversation id is all that ties it to a chat."""
     return Message.objects.create(
-        tenant=chat.tenant,
-        remoteenrollement_id=chat.id,
         conversation_id=conv_id,
         role=role,
         text=text,
     )
 
-def find_messages(tenant_key, conv_id):
+def find_messages(conv_id):
+    """The transcript. The conversation id names it on its own."""
     return Message.objects.filter(
-        tenant=tenant_key, conversation_id=conv_id
+        conversation_id=conv_id
     ).order_by("created_at")

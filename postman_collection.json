@@ -58,7 +58,7 @@
           "mode": "raw",
           "raw": "{\n  \"conv_id\": \"{{convId}}\",\n\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Lakeview Family Medicine\",\n  \"practice_phone\": \"(312) 555-0100\",\n  \"providerName\": \"Dr. Alan Reyes\",\n  \"dataAge\": \"1 month\",\n\n  \"text\": \"YES, I agree to all seven\",\n\n  \"history\": [\n    { \"role\": \"user\", \"content\": \"yes, I am ready to sign up\" },\n    { \"role\": \"assistant\", \"content\": \"Before we enroll you, Jane Doe, please read these seven points and reply YES to confirm you understand and agree to all of them: 1. Our care team will support you between visits, on behalf of Dr. Alan Reyes. 2. There may be a copay or deductible, depending on your insurance plan. 3. Only one practitioner can bill for this service in a given period. 4. Your health information may be shared with authorized Care Companion providers. 5. Participation is voluntary and you can cancel at any time. 6. If you receive a monitoring device and later decide against it, it is your responsibility to return it to the office within 7 days. 7. You agree to receive program communications by phone, email, and text. Reply YES to confirm all seven.\" }\n  ]\n}"
         },
-        "description": "Expect tag \"ENROLLED\", status \"enrolled\", consent_version \"2026-08-28\". Without the seven points in history the model will not enroll - that is the rule working."
+        "description": "Expect status \"enrolled\". Without the seven points in history the model will not enroll - that is the rule working."
       }
     },
     {
