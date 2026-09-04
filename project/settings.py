@@ -19,7 +19,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    "utils.request_log.RequestLogMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
@@ -108,44 +107,6 @@ EMAIL_BACKEND = os.environ.get(
     if MS_GRAPH_CONFIGURED
     else "django.core.mail.backends.console.EmailBackend",
 )
-
-# --- Logging ---
-# One file, one record per API call. FileHandler flushes on every record, so
-# `tail -f logs/api.log` follows calls as they happen.
-LOGS_DIR = BASE_DIR / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
-
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "api": {
-            "format": "%(asctime)s  %(levelname)-7s %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-        },
-    },
-    "handlers": {
-        "api_file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": LOGS_DIR / "api.log",
-            "maxBytes": 5 * 1024 * 1024,
-            "backupCount": 3,
-            "encoding": "utf-8",
-            "formatter": "api",
-        },
-    },
-    "loggers": {
-        # The request/response record.
-        "api": {"handlers": ["api_file"], "level": "INFO", "propagate": False},
-        # Whatever the chat itself reports - a crisis or emergency alert - in
-        # the same file, next to the call that caused it.
-        "api.controllers": {
-            "handlers": ["api_file"],
-            "level": "INFO",
-            "propagate": False,
-        },
-    },
-}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
