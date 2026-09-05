@@ -4,13 +4,10 @@ from django.core.mail import EmailMultiAlternatives
 from django.core.validators import validate_email
 from django.template.loader import render_to_string
 
+from utils.exceptions import MailError
 from utils.messages import messages
 
 TEMPLATE = "emails/chat_link.html"
-
-
-class MailError(Exception):
-    """Raised when the mail could not be handed to the mail server."""
 
 
 def chat_link(conv_id, tenant):
@@ -32,8 +29,8 @@ def send_chat_link(to, patient_name, practice, provider, conv_id, tenant):
 
     context = {
         "patient_name": patient_name or "there",
-        "practice": practice or "your care team",
-        "provider": provider or "your care team",
+        "practice": practice or messages["careTeamFallback"],
+        "provider": provider or messages["careTeamFallback"],
         "link": link,
         "assets": settings.ASSETS_URL,
         "site_url": tenant["subdomain"],

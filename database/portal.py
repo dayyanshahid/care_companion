@@ -5,16 +5,13 @@ from bson import ObjectId
 from pymongo import MongoClient
 
 from utils.enums import CaptureType, Recency
+from utils.exceptions import PortalError
 
 COLLECTION = "onsiteenrollmentcaptures"
 PRACTICES = "practices"
 REMOTE = {"type": CaptureType.remote.value}
 
 _clients = {}
-
-
-class PortalError(Exception):
-    """Raised when the portal cannot be reached or read."""
 
 
 def captures(tenant):

@@ -6,6 +6,7 @@ import httpx
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 
+from utils.exceptions import GraphMailError
 from utils.messages import messages
 
 LOGIN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
@@ -13,10 +14,6 @@ SEND_URL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
 SCOPE = "https://graph.microsoft.com/.default"
 
 EXPIRY_MARGIN = 60
-
-class GraphMailError(Exception):
-    """Raised when Graph would not take the message."""
-
 
 def _recipients(addresses):
     """Graph's recipient shape for a list of addresses."""

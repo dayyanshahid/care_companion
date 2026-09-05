@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
 from database.models import RemoteEnrollement
-from utils.enums import MessageRole, choices
 
 
 def optional():
@@ -37,13 +36,6 @@ class ChatSerializer(serializers.ModelSerializer):
         ]
 
 
-class ChatTurnSerializer(serializers.Serializer):
-    """One earlier turn, as the caller replays it."""
-
-    role = serializers.ChoiceField(choices=choices(MessageRole))
-    content = serializers.CharField(allow_blank=True)
-
-
 class ChatMessagePayloadSerializer(serializers.Serializer):
     """One stateless turn: the patient's record and their message, in full.
 
@@ -51,8 +43,8 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
     every one of them is safe to leave out - the prompt and the scripts both
     fall back when a value is blank.
 
-    `history` is the turns before this one, oldest first. The message being
-    answered is `text`, so it does not belong in `history` as well.
+    The conversation so far is not sent: it is read from the stored
+    transcript for this conv_id.
     """
 
     conv_id = serializers.CharField()
@@ -72,8 +64,6 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
     careManager = optional()
     appointmentDate = optional()
     dataAge = optional()
-
-    history = ChatTurnSerializer(many=True, required=False, default=list)
 
 
 class ChatMessageResponseSerializer(serializers.Serializer):

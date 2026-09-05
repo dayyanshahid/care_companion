@@ -4,10 +4,30 @@ messages = {
     "internalServerError": "Internal server error.",
     "routeNotFound": "That endpoint does not exist.",
 
+    # --- Chat text the patient can end up reading ---------------------------
+    # Stands in for a provider or practice the caller did not send, so a
+    # script reads "on behalf of your care team" rather than trailing off.
+    "careTeamFallback": "your care team",
+
+    # --- Log lines ----------------------------------------------------------
     # --- Chat ---------------------------------------------------------------
     "assistantUnavailable": "The assistant is unavailable right now. Please try again.",
     "portalUnavailable": "The patient portal is unavailable right now. Please try again.",
     "chatNotFound": "Chat not found.",
+    "conversationIdRequired": "A conversation id is required.",
+    "messageTextRequired": "A message is required.",
+    "emptyAssistantReply": (
+        "The assistant returned nothing. Please try again."
+    ),
+    "transcriptUnavailable": (
+        "The conversation could not be read right now. Please try again."
+    ),
+    "chatsUnavailable": (
+        "Chats could not be read right now. Please try again."
+    ),
+    "turnNotStored": (
+        "The reply was produced but could not be saved. Please try again."
+    ),
     "patientNotFound": "No remote patient with that id.",
     "invalidPatientId": "Not a valid patient id.",
 
@@ -45,6 +65,8 @@ messages = {
         "- {practice}"
     ),
     "noPatientEmail": "The patient has no email address on file.",
+    "mailFailed": "The email could not be sent.",
+    "graphFailed": "Microsoft Graph would not take the message.",
     "invalidPatientEmail": "The patient's email address is not valid: {email}",
     "chatLinkFailed": "The chat link could not be emailed: {exc}",
 

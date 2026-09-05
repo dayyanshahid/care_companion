@@ -1,25 +1,15 @@
-import logging
 import re
 from uuid import uuid4
-
 import openai
 from django.conf import settings
-
 from api.controllers.chatbot import dal
 from api.controllers.knowledge import services as knowledge
 from database.serializers import ChatMessageResponseSerializer, ChatSerializer
-from utils import mailer, scripts
+from utils import mailer, prompts, scripts
 from utils.common import build_error
-from utils.enums import (
-    ChatStatus,
-    HttpStatus,
-    MessageRole,
-    Recency,
-)
+from utils.exceptions import AssistantError
+from utils.enums import ( ChatStatus, HttpStatus, MessageRole, Recency)
 from utils.messages import messages
-
-logger = logging.getLogger(__name__)
-
 
 SCRIPTED = {
     "CONSENT": (scripts.CONSENT, None),
@@ -31,32 +21,28 @@ SCRIPTED = {
     "CRISIS": (scripts.CRISIS, None),
 }
 
-ALERTING = ("EMERGENCY", "CRISIS")
-
 TAG_PATTERN = re.compile(r"<<(%s)>>" % "|".join(SCRIPTED))
 
 ANY_TAG_PATTERN = re.compile(r"<<[A-Z_]+>>")
 
-# A patient opting out is not left to the model to notice.
 OPT_OUT_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "quit", "end"}
 
 HISTORY_LIMIT = 40
 
-# The record, in the order the model reads it. Name is added ahead of these.
 PROFILE_FIELDS = (
     ("Date of birth", "dob"),
     ("Gender", "gender"),
-    ("Patient ID", "ehrId"),
-    ("Mobile", "mobilePhone"),
+    ("Patient ID", "ehr_id"),
+    ("Mobile", "mobile_phone"),
     ("Email", "email"),
-    ("Practice", "practiceName"),
-    ("Provider", "providerName"),
-    ("Care manager", "careManager"),
-    ("Last appointment", "appointmentDate"),
-    ("Time since last visit", "dataAge"),
+    ("Practice", "practice"),
+    ("Provider", "provider"),
+    ("Care manager", "care_manager"),
+    ("Last appointment", "appointment_date"),
+    ("Time since last visit", "data_age"),
 )
 
-CONFIG_FIELDS = (
+CHAT_FIELDS = (
     "patient_name",
     "patient_profile",
     "recency",
@@ -68,17 +54,182 @@ CONFIG_FIELDS = (
 client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
-class ChatServiceError(Exception):
-    """A failure inside the assistant itself - OpenAI, or the FAQ behind it."""
+def send_message(conv_id, text, patient):
+    if not conv_id:
+        raise build_error(
+            messages["conversationIdRequired"], HttpStatus.badRequest
+        )
+
+    if not text or not text.strip():
+        raise build_error(messages["messageTextRequired"], HttpStatus.badRequest)
+
+    config = build_config(patient or {})
+
+    if is_opt_out(text):
+        return record_turn(conv_id, text, scripts.fill(scripts.OPT_OUT, config))
+
+    try:
+        context = retrieve_context(text, config)
+        history = conversation(conv_id, text)
+        answer = ask_openai(prompts.system(config, context), history)
+    except AssistantError as error:
+        raise build_error(
+            messages["assistantUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
+    answer, tag = apply_script(answer, config)
+
+    if not answer:
+        raise build_error(
+            messages["emptyAssistantReply"], HttpStatus.badGateway
+        )
+
+    return record_turn(conv_id, text, answer)
+
+
+def record_turn(conv_id, text, answer):
+    try:
+        dal.create_message(conv_id, MessageRole.user, text)
+        dal.create_message(conv_id, MessageRole.assistant, answer)
+    except Exception as error:
+        raise build_error(
+            messages["turnNotStored"], HttpStatus.badGateway, error
+        ) from error
+
+    return ChatMessageResponseSerializer(
+        {"conv_id": conv_id, "response": answer}
+    ).data
+
+
+def is_opt_out(text):
+    return "".join(c for c in text.lower() if c.isalpha()) in OPT_OUT_WORDS
+
+
+def apply_script(answer, config):
+    if not answer:
+        return "", None
+
+    match = TAG_PATTERN.search(answer)
+
+    if not match:
+        return ANY_TAG_PATTERN.sub("", answer).strip(), None
+
+    tag = match.group(1)
+    script, _ = SCRIPTED.get(tag, (None, None))
+
+    if not script:
+        return ANY_TAG_PATTERN.sub("", answer).strip(), None
+
+    return scripts.fill(script, config), tag
+
+
+def conversation(conv_id, text):
+    try:
+        earlier = [
+            {"role": message.role, "content": message.text}
+            for message in dal.find_messages(conv_id)
+        ]
+    except Exception as error:
+        raise build_error(
+            messages["transcriptUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
+    return [
+        *earlier,
+        {"role": MessageRole.user, "content": text},
+    ][-HISTORY_LIMIT:]
+
+
+def build_config(patient):
+    name = patient_name(patient)
+
+    return {
+        "patient_name": name,
+        "patient_profile": build_profile(patient, name),
+        "recency": read_recency(patient.get("data_age")),
+        "provider": patient.get("provider") or messages["careTeamFallback"],
+        "practice": patient.get("practice") or messages["careTeamFallback"],
+        "practice_phone": patient.get("practice_phone", ""),
+        "care_companion_phone": settings.CARE_COMPANION_PHONE,
+    }
+
+
+def patient_name(patient):
+    if not patient:
+        return ""
+
+    full = (patient.get("full_name") or "").strip()
+
+    if full:
+        return full
+
+    parts = (patient.get("first_name"), patient.get("last_name"))
+
+    return " ".join(part for part in parts if part).strip()
+
+
+def build_profile(patient, name):
+    if not patient:
+        return ""
+
+    lines = [f"Name: {name}"] if name else []
+
+    lines += [
+        f"{label}: {patient[field]}"
+        for label, field in PROFILE_FIELDS
+        if patient.get(field)
+    ]
+
+    return "\n".join(lines)
+
+
+def read_recency(data_age):
+    months = "".join(c for c in (data_age or "") if c.isdigit())
+
+    return Recency.oneMonth if months == "1" else Recency.year
+
+
+def retrieve_context(query, config):
+    try:
+        results = knowledge.retrieve(query, top_k=settings.RAG_TOP_K)
+    except knowledge.KnowledgeError as error:
+        raise AssistantError(str(error)) from error
+
+    return "\n\n".join(
+        f"Q: {scripts.fill(chunk.question, config)}\n"
+        f"A: {scripts.fill(chunk.answer, config)}"
+        for chunk, _ in results
+        if not scripts.supersedes(chunk.question)
+    )
+
+
+def ask_openai(prompt, history):
+    try:
+        response = client.responses.create(
+            model=settings.OPENAI_MODEL,
+            instructions=prompt,
+            input=history,
+            max_output_tokens=settings.OPENAI_MAX_TOKENS,
+        )
+    except Exception as error:
+        raise AssistantError(str(error)) from error
+
+    return (response.output_text or "").strip()
 
 
 def start_chat(tenant, patient_id):
+    if not patient_id:
+        raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
+
+    if not dal.is_object_id(patient_id):
+        raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
+
     try:
         capture = dal.get_capture(tenant, patient_id)
-    except dal.PortalError as exc:
+    except dal.PortalError as error:
         raise build_error(
-            messages["portalUnavailable"], HttpStatus.badGateway, exc
-        ) from exc
+            messages["portalUnavailable"], HttpStatus.badGateway, error
+        ) from error
 
     if not capture:
         return None
@@ -87,13 +238,13 @@ def start_chat(tenant, patient_id):
 
     try:
         conv_id, _ = open_conversation(chat)
-    except ChatServiceError as exc:
+    except Exception as error:
         if is_new_record:
             dal.delete_chat(chat)
 
         raise build_error(
-            messages["assistantUnavailable"], HttpStatus.badGateway, exc
-        ) from exc
+            messages["assistantUnavailable"], HttpStatus.badGateway, error
+        ) from error
 
     email_sent, email_error = deliver_chat_link(tenant, capture, chat, conv_id)
 
@@ -111,76 +262,31 @@ def start_chat(tenant, patient_id):
     }
 
 
-def send_message(payload):
+def open_conversation(chat):
+    conv_id = dal.add_conversation(chat, new_conversation_id())
 
-    config = payload_config(payload)
-    text = payload["text"]
+    opener = scripts.fill(scripts.OPENING, chat_config(chat))
 
-    if is_opt_out(text):
-        return turn(payload, scripts.fill(scripts.OPT_OUT, config))
+    dal.create_message(conv_id, MessageRole.assistant, opener)
 
-    try:
-        answer = ask_openai(
-            prompt=build_system_prompt(config, retrieve_context(text, config)),
-            history=history(payload),
-        )
-    except ChatServiceError as exc:
-        raise build_error(
-            messages["assistantUnavailable"], HttpStatus.badGateway, exc
-        ) from exc
-
-    answer, tag = apply_script(answer, config)
-
-    if tag in ALERTING:
-        logger.warning("Chat %s: %s reported", payload["conv_id"], tag.lower())
-
-    return turn(payload, answer)
+    return conv_id, opener
 
 
-def turn(payload, answer):
-    """Store the exchange, then return the reply.
+def chat_config(chat):
+    config = {field: getattr(chat, field) for field in CHAT_FIELDS}
+    config["care_companion_phone"] = settings.CARE_COMPANION_PHONE
 
-    Both messages are written after the answer is settled, so a turn that
-    failed on the way out never leaves a patient message with no reply.
-    """
-    conv_id = payload["conv_id"]
-
-    dal.create_message(conv_id, MessageRole.user, payload["text"])
-    dal.create_message(conv_id, MessageRole.assistant, answer)
-
-    return ChatMessageResponseSerializer(
-        {"conv_id": conv_id, "response": answer}
-    ).data
+    return config
 
 
-def list_conversations(patient_id=None):
-    if patient_id and not dal.is_object_id(patient_id):
-        raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
-
-    return ChatSerializer(
-        dal.find_started_chats(patient_id), many=True
-    ).data
-
-
-def read_conversation(ident):
-    """A patient id lists their chats; a conversation id reads one transcript."""
-    if dal.is_object_id(ident):
-        return messages["conversationsRetrieved"], list_conversations(ident)
-
-    return messages["transcriptRetrieved"], transcript(ident)
-
-
-def list_patients(tenant):
-    """Every remote patient this tenant's portal holds."""
-    try:
-        return dal.list_captures(tenant)
-    except dal.PortalError as exc:
-        raise build_error(
-            messages["portalUnavailable"], HttpStatus.badGateway, exc
-        ) from exc
+def new_conversation_id():
+    return f"conv_{uuid4().hex}"
 
 
 def deliver_chat_link(tenant, capture, chat, conv_id):
+    if not capture.get("email"):
+        return False, messages["noPatientEmail"]
+
     try:
         mailer.send_chat_link(
             capture.get("email"),
@@ -190,385 +296,55 @@ def deliver_chat_link(tenant, capture, chat, conv_id):
             conv_id,
             tenant,
         )
-    except mailer.MailError as exc:
-        logger.warning("Chat %s: %s", conv_id, exc)
-
-        return False, str(exc)
+    except mailer.MailError as error:
+        return False, str(error)
 
     return True, ""
 
+def read_conversation(ident):
+    if dal.is_object_id(ident):
+        return messages["conversationsRetrieved"], list_conversations(ident)
+
+    return messages["transcriptRetrieved"], transcript(ident)
+
+
+def list_conversations(patient_id=None):
+    if patient_id and not dal.is_object_id(patient_id):
+        raise build_error(messages["invalidPatientId"], HttpStatus.badRequest)
+
+    try:
+        chats = dal.find_started_chats(patient_id)
+
+        return ChatSerializer(chats, many=True).data
+    except Exception as error:
+        raise build_error(
+            messages["chatsUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
 
 def transcript(conv_id):
-    return [
-        {
-            "role": message.role,
-            "text": message.text,
-            "created_at": message.created_at,
-        }
-        for message in dal.find_messages(conv_id)
-    ]
+    if not conv_id:
+        return []
 
-
-def open_conversation(chat):
-    conv_id = dal.add_conversation(chat, new_conversation_id())
-
-    opener = build_opener(build_config(chat))
-
-    dal.create_message(conv_id, MessageRole.assistant, opener)
-
-    return conv_id, opener
-
-
-def is_opt_out(text):
-    """True when the patient's whole message is an opt-out word."""
-    return "".join(c for c in text.lower() if c.isalpha()) in OPT_OUT_WORDS
-
-
-def apply_script(answer, config):
-
-    match = TAG_PATTERN.search(answer)
-
-    if not match:
-        return ANY_TAG_PATTERN.sub("", answer).strip(), None
-
-    tag = match.group(1)
-    script, _ = SCRIPTED[tag]
-
-    return scripts.fill(script, config), tag
-
-
-def build_config(chat):
-    config = {field: getattr(chat, field) for field in CONFIG_FIELDS}
-    config["care_companion_phone"] = settings.CARE_COMPANION_PHONE
-
-    return config
-
-
-def payload_config(payload):
-    name = patient_name(payload)
-
-    return {
-        "patient_name": name,
-        "patient_profile": build_profile(payload, name),
-        "recency": read_recency(payload.get("dataAge")),
-        # The scripts name these mid-sentence, so a blank has to read as
-        # something rather than nothing - "on behalf of ." otherwise.
-        "provider": payload.get("providerName") or "your care team",
-        "practice": payload.get("practiceName") or "your care team",
-        "practice_phone": payload.get("practice_phone", ""),
-        "care_companion_phone": settings.CARE_COMPANION_PHONE,
-    }
-
-
-def patient_name(payload):
-    """fullName when the caller sent one, the two parts joined otherwise."""
-    full = (payload.get("fullName") or "").strip()
-
-    if full:
-        return full
-
-    parts = (payload.get("firstName"), payload.get("lastName"))
-
-    return " ".join(part for part in parts if part).strip()
-
-
-def build_profile(payload, name):
-    lines = [f"Name: {name}"] if name else []
-
-    lines += [
-        f"{label}: {payload[field]}"
-        for label, field in PROFILE_FIELDS
-        if payload.get(field)
-    ]
-
-    return "\n".join(lines)
-
-
-def read_recency(data_age):
-    months = "".join(c for c in (data_age or "") if c.isdigit())
-
-    return Recency.oneMonth if months == "1" else Recency.year
-
-
-def new_conversation_id():
-    return f"conv_{uuid4().hex}"
-
-
-def history(payload):
-    """The conversation as the model reads it, oldest first.
-
-    The caller may replay the earlier turns itself. When it does not, they
-    come from the stored transcript for this conv_id - without them the model
-    cannot know it has already sent the consent points, and reads every "yes"
-    as a fresh request to enroll.
-
-    Either way the message being answered is appended here: it is not stored
-    until the reply is settled.
-    """
-    replayed = payload.get("history")
-
-    if replayed:
-        earlier = [
-            {"role": turn["role"], "content": turn["content"]}
-            for turn in replayed
-        ]
-    else:
-        earlier = [
-            {"role": message.role, "content": message.text}
-            for message in dal.find_messages(payload["conv_id"])
-        ]
-
-    return [
-        *earlier,
-        {"role": MessageRole.user, "content": payload["text"]},
-    ][-HISTORY_LIMIT:]
-
-
-def ask_openai(prompt, history):
     try:
-        response = client.responses.create(
-            model=settings.OPENAI_MODEL,
-            instructions=prompt,
-            input=history,
-            max_output_tokens=settings.OPENAI_MAX_TOKENS,
-        )
-    except Exception as exc:
-        raise ChatServiceError(str(exc)) from exc
+        return [
+            {
+                "role": message.role,
+                "text": message.text,
+                "created_at": message.created_at,
+            }
+            for message in dal.find_messages(conv_id)
+        ]
+    except Exception as error:
+        raise build_error(
+            messages["transcriptUnavailable"], HttpStatus.badGateway, error
+        ) from error
 
-    return response.output_text
 
-
-def retrieve_context(query, config):
-    """The FAQ behind an answer.
-
-    The FAQ still carries an older, shorter consent list. Telling the model
-    to ignore it is not enough - it answers from what it is shown - so the
-    superseded entries are dropped before the prompt ever sees them.
-    """
+def list_patients(tenant):
     try:
-        results = knowledge.retrieve(
-            query,
-            top_k=settings.RAG_TOP_K,
-        )
-    except knowledge.KnowledgeError as exc:
-        raise ChatServiceError(str(exc)) from exc
-
-    return "\n\n".join(
-        f"Q: {scripts.fill(chunk.question, config)}\n"
-        f"A: {scripts.fill(chunk.answer, config)}"
-        for chunk, _ in results
-        if not scripts.supersedes(chunk.question)
-    )
-
-
-def build_opener(config):
-    return scripts.fill(scripts.OPENING, config)
-
-
-def build_system_prompt(config, context):
-    provider = config["provider"] or "your care team"
-    practice = config["practice"] or "your care team"
-
-    phone = (
-        f"The practice's number is {config['practice_phone']}. Give it only "
-        "when a patient needs to reach the office."
-        if config.get("practice_phone")
-        else "You have no phone number for anyone. Never state or invent one."
-    )
-
-    recency = {
-        Recency.oneMonth: "The patient was last seen about one month ago.",
-        Recency.year: "The patient was last seen about one year ago.",
-    }.get(config.get("recency"), "The patient was last seen about one year ago.")
-
-    context = context or "(No relevant FAQ was found.)"
-    profile = config.get("patient_profile") or "(No patient record was sent.)"
-
-    return f"""
-You are the Care Companion team's secure AI assistant, writing on behalf of
-{provider}'s office at {practice}.
-
-You help patients enroll in the Care Companion program.
-
-WHAT YOU ARE:
-You are automated software, not a person, and you never imply otherwise. You
-have no name of your own and no personal history. If a patient asks who or
-what they are talking to, say plainly that you are the Care Companion team's
-secure automated AI assistant, texting on behalf of {provider}'s office, and
-that you can have a member of the team call them whenever they would prefer
-to speak with someone. Never claim to be a nurse, a member of staff, or any
-named individual.
-
-You answer at any hour, seven days a week. Business hours -
-{scripts.BUSINESS_HOURS} - apply only to reaching a person, never to you.
-Mention them only when a patient wants to speak with someone.
-
-PATIENT RECORD
-This is the patient's complete record from the practice.
-
-{profile}
-
-{recency}
-
-Use it to speak to them personally, and answer plainly when they ask about
-their own details - their name, their date of birth, their provider, their
-care manager, their appointment, the gap since their last visit. This is
-their own information and they are entitled to it. Never refuse a question
-about their own record, and never tell a patient you cannot share personal
-information with them - it is their information, not someone else's.
-
-What you must not do is volunteer it. Never read the record out at them, and
-never state anything about them that is not in the record above. Answer the
-detail they asked for and leave the rest - do not recite contact details or
-identifiers they did not ask about.
-
-IMPORTANT:
-The opening message has already been sent. Do not repeat it.
-
-SCRIPTS:
-This section overrides every other rule below it, including GROUNDING.
-
-Some replies are fixed wording that has been reviewed by legal. You do not
-write those. When one applies, reply with its tag ALONE and nothing else -
-the reviewed text is inserted in place of your reply, so anything you write
-alongside the tag is thrown away. A tag with a sentence in front of it is a
-mistake; send only the tag.
-
-<<CONSENT>>    the patient is ready to enroll and needs the consent points.
-<<ENROLLED>>   they have replied yes to all seven consent points.
-<<DECLINED>>   they have clearly said no to the program.
-<<CALLBACK>>   they want a person to call them instead.
-<<OPTOUT>>     they ask not to be contacted again.
-<<EMERGENCY>>  they describe any clinical symptom or medical concern.
-<<CRISIS>>     they describe thoughts of harming themselves.
-
-Never write out the consent points, the welcome, or the emergency wording
-yourself - tag it instead. Never mention these tags to the patient.
-
-The FAQ is out of date on the consent points and lists an older, shorter set.
-Ignore it. The moment a patient asks what they would be agreeing to, asks how
-to enroll, or says they are ready, reply <<CONSENT>> and nothing else - do
-not summarise, preview, or paraphrase the points from the FAQ or from memory.
-Consent is the seven reviewed points or it is not consent.
-
-Order matters: <<CRISIS>> and <<EMERGENCY>> override everything else, on any
-turn, at any hour, whatever the conversation had reached.
-
-CLINICAL MESSAGES:
-If a patient describes a symptom, a medical concern, or anything that sounds
-like it needs care - chest pain, trouble breathing, bleeding, a fall, a new
-or worsening symptom - reply with <<EMERGENCY>> and nothing else. If they
-describe thoughts of harming themselves, reply with <<CRISIS>> instead.
-
-Do not assess how serious it is. Do not ask a follow-up question. Do not
-mention the program in that reply. A human is alerted at the same time, so
-the conversation is over: do not raise the enrollment again afterwards, even
-if the patient keeps talking. Answer anything further briefly and leave it.
-
-SCOPE:
-You are here for two things only: the Care Companion program - what it is,
-what it covers, what it costs, who provides it, how to join or leave - and
-the patient's own record above.
-
-Everything else is out of scope: small talk, news, weather, sport, politics,
-recipes, other products or services, and anything asking you to be a general
-assistant. Clinical questions are handled by the rule above, not here.
-
-Out of scope does not mean cold. When one comes up:
-
-1. One short line that shows you actually heard them. Name the thing they
-   said, and mean it - if they mention a bad week, a bereavement or a worry,
-   respond to that like a person would, not with a stock phrase.
-2. One short line saying it is not something you can help with here, and
-   where it should go if it needs to go somewhere - {practice} for anything
-   clinical.
-3. One question that picks the enrollment back up.
-
-Two or three sentences in total. Do not answer the off-topic question, do
-not give an opinion on it, and do not ask them anything further about it.
-
-If they raise the same off-topic thing again, do not repeat the routine -
-say plainly and kindly that it is outside what you can help with, and leave
-the enrollment question open. Do not lecture them about it.
-
-GROUNDING:
-Answer patient questions ONLY using the FAQ CONTEXT below, except where
-SCRIPTS says to send a tag instead - that always wins.
-
-Do not guess or add information that is not in the FAQ.
-If the answer is not available, say you're not certain and offer to have
-the care team help, or point the patient back to {practice}.
-
-Never give an exact copay amount.
-{phone}
-
-FAQ CONTEXT:
-{context}
-
-STYLE:
-- Write simply and warmly, the way a person texting would - but never claim
-  to be one.
-- Use simple language and contractions.
-- Lead with the answer. No preamble, no repeating their question back at
-  them, no "great question".
-- Say a thing once. Never re-explain what you have already covered - if they
-  ask again, answer shorter, not longer.
-- Ask at most one question, and put it at the end.
-- Warmth is in the wording, not in extra sentences.
-
-PERSUASION:
-Your job is to get the patient enrolled. Every reply should move them a step
-closer, and you should ask - don't wait to be asked.
-
-- Make it about them. Tie the program to what is actually on their record -
-  their own provider, their care manager, the gap since their last visit. A
-  reason that fits their life beats a list of features.
-- Lead with what they get, not what the program is. A dedicated licensed
-  nurse who calls them, sorts out refills and appointments, and catches
-  problems early.
-- When they hesitate, name the worry out loud and answer that one thing from
-  the FAQ - cost, time, privacy, "I'm already managing fine". Then ask again.
-- End on an easy next step, not an open question. "Shall I go through what
-  you'd be agreeing to?" is easier to say yes to than "so, interested?".
-- If they want to think it over or ask family, that is fine - offer to cover
-  the consent points now so they have everything, and leave it with them.
-
-Honestly, though. Never pressure, guilt, or rush them. Never invent a benefit,
-promise it is free, or imply their care suffers without it. Ask again at most
-twice; after that, only if they bring it back up. A clear no is a no - take it
-gracefully.
-
-ENROLLMENT:
-This is a two-step handshake, and which step you are on is settled by one
-question: do the seven numbered points already appear in the conversation
-above? Check before you answer anything that sounds like agreement.
-
-NOT SENT YET - no earlier message of yours lists points 1 to 7. The patient
-is ready, asks how to join, or asks what they would be agreeing to: reply
-<<CONSENT>> and nothing else. Agreement at this stage is not consent - send
-the points and wait.
-
-ALREADY SENT - one of your earlier messages lists points 1 to 7. Never send
-them again, whatever the patient says. From here:
-  - a clear yes, "I agree", or "yes to all seven" is <<ENROLLED>>
-  - a no is <<DECLINED>>
-  - a question about a point gets a plain answer from the FAQ, then ask them
-    again if they are happy to confirm
-
-"Yes" after the points have been sent means they are agreeing to them. It is
-never a fresh request to see them.
-
-SCENARIOS:
-- Questions: answer from the FAQ, then continue enrollment.
-- Off-topic: handle it the way SCOPE says - heard, redirected, and back to
-  the enrollment, in two or three sentences.
-- Scam concerns: this is a fair question and worth saying so. Invite them to
-  call {practice} directly to confirm the program is genuine, tell them there
-  is no rush and nothing happens until they agree, and don't pressure them.
-- Wants to speak to a person, or to enroll by phone instead: reply
-  <<CALLBACK>> and nothing else. Hand off without resistance.
-- Similar program elsewhere: use the FAQ. Different providers may enroll a
-  patient in different programs; only the same program cannot be billed twice
-  in the same period.
-- Declines: reply <<DECLINED>> and nothing else.
-""".strip()
+        return dal.list_captures(tenant)
+    except dal.PortalError as error:
+        raise build_error(
+            messages["portalUnavailable"], HttpStatus.badGateway, error
+        ) from error

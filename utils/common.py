@@ -4,14 +4,8 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 from utils.enums import HttpStatus
+from utils.exceptions import ApiError
 from utils.messages import messages
-
-class ApiError(Exception):
-    def __init__(self, message, code=HttpStatus.badRequest, error=None):
-        super().__init__(message)
-        self.message = message
-        self.code = code
-        self.error = error
 
 
 def build_error(message, code=HttpStatus.badRequest, error=None):
@@ -44,7 +38,6 @@ success, error = response.success, response.error
 
 
 def exception_handler(exc, context):
-    """DRF's errors - validation, 405 - and our own, in the shape above."""
     if isinstance(exc, ApiError):
         return Response(
             error(exc.message, exc.code, exc.error), status=exc.code
@@ -52,12 +45,12 @@ def exception_handler(exc, context):
 
     handled = drf_exception_handler(exc, context)
 
-    if handled is None:  # not an APIException; server_error takes it
+    if handled is None:  
         return None
 
     if isinstance(exc, ValidationError):
         body = error(messages["validationFailed"], handled.status_code)
-        body["result"] = handled.data  # the per-field errors
+        body["result"] = handled.data 
     else:
         detail = handled.data.get("detail", handled.data)
         body = error(str(detail), handled.status_code)
@@ -67,14 +60,12 @@ def exception_handler(exc, context):
     return handled
 
 def not_found(request, exception=None):
-    """404 for a path that matches no route. Django resolves before DRF."""
     return JsonResponse(
         error(messages["routeNotFound"], HttpStatus.notFound),
         status=HttpStatus.notFound,
     )
 
 def server_error(request):
-    """500 for anything that escaped a view."""
     return JsonResponse(
         error(messages["internalServerError"], HttpStatus.internalServerError),
         status=HttpStatus.internalServerError,

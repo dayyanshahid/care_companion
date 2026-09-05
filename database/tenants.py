@@ -5,6 +5,7 @@ from django.conf import settings
 from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
 
+from utils.exceptions import TenantError
 from utils.messages import messages
 
 logger = logging.getLogger(__name__)
@@ -14,10 +15,6 @@ ACTIVE = {"deletedAt": None}
 
 _client = None
 _by_slug = None
-
-
-class TenantError(Exception):
-    """Raised when the registry cannot be read, or a record is unusable."""
 
 
 def slug(value):
