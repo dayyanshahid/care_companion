@@ -5,8 +5,7 @@ from django.conf import settings
 from pymongo import MongoClient
 from pymongo.uri_parser import parse_uri
 
-from utils.exceptions import TenantError
-from utils.messages import messages
+from utils.messages import messages, TenantError
 
 logger = logging.getLogger(__name__)
 

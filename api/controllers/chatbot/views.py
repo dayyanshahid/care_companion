@@ -85,6 +85,10 @@ def send_message(request):
             "care_manager": body["careManager"],
             "appointment_date": body["appointmentDate"],
             "data_age": body["dataAge"],
+            "care_manager_id": body["careManagerId"],
+            "caregivers": body["caregivers"],
+            "codes": body["codes"],
+            "programs": body["programs"],
         }
 
         result = services.send_message(

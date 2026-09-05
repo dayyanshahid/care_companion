@@ -17,9 +17,8 @@ from django.conf import settings
 from database.models import FaqChunk
 from database.serializers import FaqChunkSerializer
 from utils.common import build_error
-from utils.exceptions import KnowledgeError
 from utils.enums import HttpStatus
-from utils.messages import messages
+from utils.messages import messages, KnowledgeError
 
 _QA_RE = re.compile(r"^Q\d+\.\s*", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(\d+)\.\s+(.*)")

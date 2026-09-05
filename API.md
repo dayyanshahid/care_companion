@@ -382,13 +382,113 @@ No `X-Tenant` header — the `conv_id` identifies the chat by itself.
 
 **Request body**
 
+Only `conv_id` and `text` are required. Everything else is the patient's
+record, sent with each turn to personalise the reply — any of it may be left
+out, and the prompt and the reviewed scripts both fall back on a blank.
+
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `conv_id` | string | yes | From `/chat/start`, or the `?conv=` query param on the chat link |
 | `text` | string | yes | The patient's message. Must be non-empty |
+| `firstName` | string | no | |
+| `lastName` | string | no | |
+| `fullName` | string | no | Preferred over first/last when present |
+| `dob` | string | no | |
+| `gender` | string | no | |
+| `ehrId` | string | no | Shown to the patient as "Patient ID" |
+| `mobilePhone` | string | no | |
+| `email` | string | no | |
+| `practiceName` | string | no | Falls back to "your care team" |
+| `practice_phone` | string | no | Without it the assistant is forbidden from stating any number |
+| `providerName` | string | no | Falls back to "your care team" |
+| `careManager` | string | no | |
+| `careManagerId` | string | no | Accepted, but kept out of the prompt — an internal id is nothing to say to a patient |
+| `appointmentDate` | string | no | |
+| `dataAge` | string | no | `"1 month"` reads as one month; anything else reads as a year |
+| `programs` | string[] | no | e.g. `["CCM", "RPM"]` |
+| `caregivers` | object[] | no | `name`, `phone`, `relationship`, `email` |
+| `codes` | object[] | no | `code`, `description`, `conditionId`, `parentConditionId`, `other`, `status`, `note` |
+
+Unknown fields are ignored rather than rejected.
+
+**How `codes` and `caregivers` are used.** Only `description` (or `code` when
+there is no description) and `status` reach the prompt, and only `name` and
+`relationship` do for a caregiver — the rest is accepted and held, but a
+patient's own reply has no use for a phone number or an internal id. A code
+whose `status` is `chronic` is treated as confirmed; anything else, `pending`
+included, is never presented to the patient as a diagnosis. The assistant is
+told never to list conditions back at them unprompted.
+
+**Minimal**
 
 ```json
 { "conv_id": "conv_abc123", "text": "How much does it cost?" }
+```
+
+**Full**
+
+```json
+{
+  "conv_id": "conv_abc123",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "fullName": "Jane Doe",
+  "dob": "1958-03-14",
+  "gender": "female",
+  "ehrId": "EHR-10294",
+  "mobilePhone": "+15551234567",
+  "email": "jane.doe@example.com",
+  "practiceName": "Prime Care Health",
+  "practice_phone": "+15559876543",
+  "providerName": "Dr. Mohammad S. Shafi",
+  "careManager": "Sarah Nguyen",
+  "careManagerId": "65a1b2c3d4e5f67890123456",
+  "appointmentDate": "2026-08-12",
+  "dataAge": "1 month",
+  "text": "Hi, I have a question about enrollment.",
+
+  "programs": ["CCM", "RPM"],
+
+  "caregivers": [
+    {
+      "name": "John Doe",
+      "phone": "+15557654321",
+      "relationship": "spouse",
+      "email": "john.doe@example.com"
+    }
+  ],
+
+  "codes": [
+    {
+      "code": "N18.3",
+      "description": "Chronic kidney disease, stage 3",
+      "conditionId": "ckd",
+      "parentConditionId": "renal",
+      "other": false,
+      "status": "chronic",
+      "note": ""
+    }
+  ]
+}
+```
+
+That body produces this `PATIENT RECORD` block in the prompt:
+
+```text
+Name: Jane Doe
+Date of birth: 1958-03-14
+Gender: female
+Patient ID: EHR-10294
+Mobile: +15551234567
+Email: jane.doe@example.com
+Practice: Prime Care Health
+Provider: Dr. Mohammad S. Shafi
+Care manager: Sarah Nguyen
+Last appointment: 2026-08-12
+Time since last visit: 1 month
+Conditions: Chronic kidney disease, stage 3 (chronic)
+Programs: CCM, RPM
+Caregivers: John Doe (spouse)
 ```
 
 **Response — 200**
@@ -401,8 +501,7 @@ No `X-Tenant` header — the `conv_id` identifies the chat by itself.
   "message": "Message sent.",
   "result": {
     "conv_id": "conv_abc123",
-    "response": "There's usually a small copay depending on your plan...",
-    "status": "active"
+    "response": "There's usually a small copay depending on your plan..."
   }
 }
 ```
@@ -413,20 +512,11 @@ No `X-Tenant` header — the `conv_id` identifies the chat by itself.
 |---|---|---|
 | `conv_id` | string | Echoed back |
 | `response` | string | The assistant's reply — render this as the assistant bubble |
-| `status` | string | The chat status after this turn |
 
-**Status values**
-
-| Value | Meaning |
-|---|---|
-| `active` | Still talking — patient is undecided, asking questions, or thinking it over |
-| `enrolled` | Patient agreed to all five consent points |
-| `declined` | Patient clearly said no |
-
-Use `status` to drive the UI — e.g. show a success banner on `enrolled`, a
-closing note on `declined`. A patient who is undecided or wants to talk to
-family first stays `active`, so keep the composer open until the status
-actually changes.
+This endpoint does **not** return the chat status. Read it from
+`GET /api/chat/conversations`, where `status` is one of `active`, `enrolled`,
+`declined`, `callback` or `optedOut`. `enrolled` means the patient agreed to
+all seven consent points.
 
 > The assistant emits internal tags like `<<ENROLLED>>` in its raw output — these are
 > **stripped server-side**. `response` is always clean text, safe to render.

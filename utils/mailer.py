@@ -4,8 +4,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.core.validators import validate_email
 from django.template.loader import render_to_string
 
-from utils.exceptions import MailError
-from utils.messages import messages
+from utils.messages import messages, MailError
 
 TEMPLATE = "emails/chat_link.html"
 

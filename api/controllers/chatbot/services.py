@@ -7,9 +7,8 @@ from api.controllers.knowledge import services as knowledge
 from database.serializers import ChatMessageResponseSerializer, ChatSerializer
 from utils import mailer, prompts, scripts
 from utils.common import build_error
-from utils.exceptions import AssistantError
 from utils.enums import ( ChatStatus, HttpStatus, MessageRole, Recency)
-from utils.messages import messages
+from utils.messages import messages, AssistantError
 
 SCRIPTED = {
     "CONSENT": (scripts.CONSENT, None),
@@ -180,7 +179,51 @@ def build_profile(patient, name):
         if patient.get(field)
     ]
 
+    lines += [
+        f"{label}: {value}"
+        for label, value in (
+            ("Conditions", read_conditions(patient.get("codes"))),
+            ("Programs", ", ".join(patient.get("programs") or [])),
+            ("Caregivers", read_caregivers(patient.get("caregivers"))),
+        )
+        if value
+    ]
+
     return "\n".join(lines)
+
+
+def read_conditions(codes):
+    """Each coded condition, with the status that says if it is confirmed."""
+    named = []
+
+    for code in codes or []:
+        label = code.get("description") or code.get("code")
+
+        if not label:
+            continue
+
+        status = code.get("status")
+
+        named.append(f"{label} ({status})" if status else label)
+
+    return "; ".join(named)
+
+
+def read_caregivers(caregivers):
+    """Who else is on the record, and how they are related."""
+    named = []
+
+    for caregiver in caregivers or []:
+        name = caregiver.get("name")
+
+        if not name:
+            continue
+
+        relationship = caregiver.get("relationship")
+
+        named.append(f"{name} ({relationship})" if relationship else name)
+
+    return "; ".join(named)
 
 
 def read_recency(data_age):

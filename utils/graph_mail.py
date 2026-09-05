@@ -6,8 +6,7 @@ import httpx
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 
-from utils.exceptions import GraphMailError
-from utils.messages import messages
+from utils.messages import messages, GraphMailError
 
 LOGIN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 SEND_URL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"

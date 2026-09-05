@@ -36,6 +36,27 @@ class ChatSerializer(serializers.ModelSerializer):
         ]
 
 
+class CaregiverSerializer(serializers.Serializer):
+    """Someone else on the patient's record, and how they are related."""
+
+    name = optional()
+    phone = optional()
+    relationship = optional()
+    email = optional()
+
+
+class ConditionCodeSerializer(serializers.Serializer):
+    """One coded condition. `status` says whether it is confirmed."""
+
+    code = optional()
+    description = optional()
+    conditionId = optional()
+    parentConditionId = optional()
+    other = serializers.BooleanField(required=False, default=False)
+    status = optional()
+    note = optional()
+
+
 class ChatMessagePayloadSerializer(serializers.Serializer):
     """One stateless turn: the patient's record and their message, in full.
 
@@ -64,6 +85,15 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
     careManager = optional()
     appointmentDate = optional()
     dataAge = optional()
+    careManagerId = optional()
+
+    caregivers = CaregiverSerializer(many=True, required=False, default=list)
+    codes = ConditionCodeSerializer(many=True, required=False, default=list)
+    programs = serializers.ListField(
+        child=serializers.CharField(allow_blank=True),
+        required=False,
+        default=list,
+    )
 
 
 class ChatMessageResponseSerializer(serializers.Serializer):

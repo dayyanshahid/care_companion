@@ -5,7 +5,7 @@ from bson import ObjectId
 from pymongo import MongoClient
 
 from utils.enums import CaptureType, Recency
-from utils.exceptions import PortalError
+from utils.messages import PortalError
 
 COLLECTION = "onsiteenrollmentcaptures"
 PRACTICES = "practices"

@@ -94,7 +94,6 @@ def supersedes(question):
     return any(asked.startswith(entry) for entry in SUPERSEDED_FAQ)
 
 
-# Everything a script can name, and where each value comes from.
 PLACEHOLDERS = {
     "[Patient Name]": "patient_name",
     "[Provider name]": "provider",

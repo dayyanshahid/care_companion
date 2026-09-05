@@ -4,8 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 from utils.enums import HttpStatus
-from utils.exceptions import ApiError
-from utils.messages import messages
+from utils.messages import messages, ApiError
 
 
 def build_error(message, code=HttpStatus.badRequest, error=None):

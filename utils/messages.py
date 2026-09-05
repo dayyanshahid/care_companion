@@ -1,12 +1,10 @@
+from utils.enums import HttpStatus
+
 messages = {
     # --- Generic ------------------------------------------------------------
     "validationFailed": "Validation failed.",
     "internalServerError": "Internal server error.",
     "routeNotFound": "That endpoint does not exist.",
-
-    # --- Chat text the patient can end up reading ---------------------------
-    # Stands in for a provider or practice the caller did not send, so a
-    # script reads "on behalf of your care team" rather than trailing off.
     "careTeamFallback": "your care team",
 
     # --- Log lines ----------------------------------------------------------
@@ -97,3 +95,49 @@ messages = {
     "ingestPathHelp": "Path to the FAQ .docx file",
     "ingestSuccess": "Ingested {count} FAQ entries.",
 }
+
+# --- Errors -------------------------------------------------------------
+# Raised by the application. Each one names the message above that it
+# carries when no detail is given.
+
+
+class AppError(Exception):
+    key = "internalServerError"
+
+    def __init__(self, detail=None):
+        self.detail = detail or messages[self.key]
+
+        super().__init__(self.detail)
+
+
+class ApiError(AppError):
+    def __init__(self, message=None, code=HttpStatus.badRequest, error=None):
+        super().__init__(message)
+
+        self.message = self.detail
+        self.code = code
+        self.error = error
+
+
+class AssistantError(AppError):
+    key = "assistantUnavailable"
+
+
+class KnowledgeError(AppError):
+    key = "searchUnavailable"
+
+
+class PortalError(AppError):
+    key = "portalUnavailable"
+
+
+class TenantError(AppError):
+    key = "tenantRegistryUnavailable"
+
+
+class MailError(AppError):
+    key = "mailFailed"
+
+
+class GraphMailError(MailError):
+    key = "graphFailed"
