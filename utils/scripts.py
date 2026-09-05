@@ -104,6 +104,9 @@ PLACEHOLDERS = {
 }
 
 EMPTY_CLAUSES = {
+    "[Patient Name]": (
+        ", [Patient Name]",
+    ),
     "[Care Companion number]": (
         " from phone number: [Care Companion number], during normal business hours",
         " from phone number: [Care Companion number]",
