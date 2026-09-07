@@ -1,7 +1,3 @@
-"""Shaping a stored prompt for one patient.
-
-The prompt itself comes from the database; nothing here reads it from disk.
-"""
 import re
 
 PLACEHOLDERS = {

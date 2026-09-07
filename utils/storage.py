@@ -1,8 +1,3 @@
-"""Where uploaded documents live: an S3 bucket, keyed by a random name.
-
-Only the key is worth keeping - it is what `delete` and `url` are given. The
-original filename is the patient-facing label and is stored on the record.
-"""
 import uuid
 from pathlib import Path
 
@@ -29,10 +24,6 @@ def client():
             region_name=settings.AWS_REGION,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
-            # Path-style keeps the bucket in the path rather than the host,
-            # which is what an S3-compatible endpoint expects. The checksum
-            # settings keep boto3 off its chunked upload encoding, which such
-            # a store rejects for want of a Content-Length.
             config=Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
@@ -45,7 +36,6 @@ def client():
 
 
 def upload(document):
-    """Put the file in the bucket under a fresh key and return that key."""
     key = (
         f"{settings.S3_PROMPT_FILES_PREFIX}/{uuid.uuid4().hex}"
         f"{Path(document.name).suffix.lower()}"
@@ -76,7 +66,6 @@ def delete(key):
 
 
 def url(key):
-    """A link that expires. A bucket we cannot reach reads as no link."""
     try:
         return client().generate_presigned_url(
             "get_object",

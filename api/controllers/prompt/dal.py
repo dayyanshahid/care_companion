@@ -8,14 +8,15 @@ def find_prompt():
     return SystemPrompt.objects.first()
 
 
-def save_prompt(body, updated_by):
+def save_prompt(changes):
     prompt = find_prompt()
 
     if prompt is None:
-        return SystemPrompt.objects.create(body=body, updated_by=updated_by)
+        return SystemPrompt.objects.create(**changes)
 
-    prompt.body = body
-    prompt.updated_by = updated_by
+    for field, value in changes.items():
+        setattr(prompt, field, value)
+
     prompt.action_type = ActionType.Updated
     prompt.save()
 

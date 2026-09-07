@@ -11,6 +11,7 @@ class SystemPrompt(models.Model):
     """
 
     body = models.TextField()
+    chatbot_name = models.CharField(max_length=120, blank=True)
     updated_by = models.CharField(max_length=120, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

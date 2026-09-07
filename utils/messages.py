@@ -29,7 +29,7 @@ messages = {
     "promptUpdated": "System prompt updated.",
     "promptFileDeleted": "Document removed.",
     "promptFileNotFound": "That document does not exist.",
-    "nothingToUpdate": "Send a system prompt, a file, or both.",
+    "nothingToUpdate": "Send a system prompt, a chatbot name, or a file.",
     "fileTypeUnsupported": (
         "{name} is not a supported document. Upload .docx, .txt or .md."
     ),

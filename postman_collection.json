@@ -53,6 +53,12 @@
               "description": "The prompt body. Overwrites whatever is stored, and is the assistant's only instructions - keep the '## 6. REVIEWED WORDING' section or the reviewed emergency and consent wording stops being substituted. Leave this row disabled to add files without touching the prompt."
             },
             {
+              "key": "chatbot_name",
+              "value": "EMMA",
+              "type": "text",
+              "description": "What the chatbot is called. It is passed to the assistant as its own name, so it answers 'What is your name?' with it - the prompt text does not need to mention it. Left out, it keeps the stored name; a prompt-only update does not clear it."
+            },
+            {
               "key": "updated_by",
               "value": "umar",
               "type": "text",
@@ -77,7 +83,7 @@
             "update"
           ]
         },
-        "description": "Send the prompt text, the files, or both. An update carrying neither is rejected with 400.\n\nFiles are APPENDED - existing documents are left alone. An unsupported file type is refused before anything is written, so nothing is half-applied."
+        "description": "Send the prompt text, a chatbot name, files, or any mix. An update carrying none of them is rejected with 400.\n\nEach field is independent: a field you leave out keeps its stored value, so you can rename the bot without resending the prompt. Files are APPENDED - existing documents are left alone.\n\nNothing is written until every file has been read and stored, so a refused file type or an unreachable bucket leaves the prompt and name exactly as they were."
       }
     },
     {
@@ -116,7 +122,7 @@
             "get"
           ]
         },
-        "description": "The prompt in force plus every stored document. Each document carries a presigned `url` that expires after S3_URL_TTL seconds - paste it into a browser to download the original file.\n\nAn empty `system_prompt` means nothing has been stored yet; the chat endpoint will answer 503 until you send one."
+        "description": "The prompt in force, the chatbot's name, and every stored document. Each document carries a presigned `url` that expires after S3_URL_TTL seconds - paste it into a browser to download the original file.\n\nAn empty `system_prompt` means nothing has been stored yet; the chat endpoint will answer 503 until you send one."
       }
     },
     {

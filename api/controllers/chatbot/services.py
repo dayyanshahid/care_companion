@@ -93,6 +93,12 @@ def build_prompt(values):
     stored = prompt_service.current()
     parts = [system_prompt.fill(stored["body"], values)]
 
+    if stored["name"]:
+        parts.append(
+            f"YOUR NAME:\n{stored['name']} - this is what you are called. "
+            "Give this name when a patient asks who they are speaking to."
+        )
+
     if stored["knowledge"]:
         parts.append(f"APPROVED DOCUMENTS:\n{stored['knowledge']}")
 

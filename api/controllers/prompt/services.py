@@ -1,12 +1,3 @@
-"""The prompt the assistant runs on, and the documents behind it.
-
-The database is the only source: nothing is shipped on disk, so until a prompt
-is stored the assistant has nothing to send and says so.
-
-An update overwrites the single prompt record and appends whatever files came
-with it. A delete removes one document - from S3 and from the record - and
-leaves every other document standing.
-"""
 from api.controllers.prompt import dal
 from database.serializers import SystemPromptResponseSerializer
 from utils import documents, storage
@@ -16,16 +7,16 @@ from utils.messages import messages, DocumentError, StorageError
 
 
 def current():
-    """What the assistant should send. There is no prompt but a stored one."""
     prompt = dal.find_prompt()
 
-    if prompt is None:
+    if prompt is None or not prompt.body.strip():
         raise build_error(
             messages["promptNotConfigured"], HttpStatus.serviceUnavailable
         )
 
     return {
         "body": prompt.body,
+        "name": prompt.chatbot_name,
         "knowledge": "\n\n".join(
             record.text for record in dal.find_files() if record.text
         ),
@@ -38,6 +29,7 @@ def read():
     return SystemPromptResponseSerializer(
         {
             "system_prompt": prompt.body if prompt else "",
+            "chatbot_name": prompt.chatbot_name if prompt else "",
             "files": [_file_data(record) for record in dal.find_files()],
         }
     ).data
@@ -45,14 +37,12 @@ def read():
 
 def update(payload):
     body = payload["system_prompt"].strip()
+    name = payload["chatbot_name"].strip()
     uploads = payload["files"]
 
-    if not body and not uploads:
+    if not body and not name and not uploads:
         raise build_error(messages["nothingToUpdate"])
 
-    # Nothing is written until every document has been read and stored. A
-    # refused file type or an unreachable bucket must leave the prompt in
-    # force exactly as it was, rather than half-applying the update.
     texts = _read_all(uploads)
     keys = _upload_all(uploads)
 
@@ -65,8 +55,17 @@ def update(payload):
             text=text,
         )
 
+    changes = {}
+
     if body:
-        dal.save_prompt(body, payload["updated_by"])
+        changes["body"] = body
+
+    if name:
+        changes["chatbot_name"] = name
+
+    if changes:
+        changes["updated_by"] = payload["updated_by"]
+        dal.save_prompt(changes)
 
     return read()
 
@@ -99,7 +98,6 @@ def _read_all(uploads):
 
 
 def _upload_all(uploads):
-    """Every document reaches the bucket, or none of them stays there."""
     keys = []
 
     try:
@@ -117,7 +115,6 @@ def _upload_all(uploads):
 
 
 def _discard(key):
-    """Undo one upload. The failure being reported is the one that matters."""
     try:
         storage.delete(key)
     except StorageError:
