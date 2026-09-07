@@ -20,7 +20,7 @@ def get_prompt(request):
     return Response(
         response.success(
             messages["promptFetched"],
-            data=services.read(query.validated_data["tennet_id"]),
+            data=services.read(query.validated_data["tenant_id"]),
         )
     )
 

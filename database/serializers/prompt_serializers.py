@@ -28,7 +28,7 @@ class ObjectIdField(serializers.CharField):
 class TennetQuerySerializer(serializers.Serializer):
     """Whose prompt and documents to read."""
 
-    tennet_id = ObjectIdField()
+    tenant_id = ObjectIdField()
 
 
 class UploadListField(serializers.ListField):
@@ -63,7 +63,7 @@ class PromptFileSerializer(serializers.Serializer):
 class SystemPromptPayloadSerializer(serializers.Serializer):
     """One tenant's update: a new prompt, name, documents, or any mix.
 
-    `tennet_id` says whose record is being written and is always required; an
+    `tenant_id` says whose record is being written and is always required; an
     update carrying nothing else is rejected. A field left out keeps whatever
     that tenant has stored, so the name survives a prompt-only update and the
     prompt survives a name-only one. Files add to what is stored; they never
@@ -76,7 +76,7 @@ class SystemPromptPayloadSerializer(serializers.Serializer):
     chatbot_name = serializers.CharField(
         required=False, allow_blank=True, default="", max_length=120
     )
-    tennet_id = ObjectIdField()
+    tenant_id = ObjectIdField()
     updated_by = serializers.CharField(
         required=False, allow_blank=True, default=""
     )
@@ -92,5 +92,5 @@ class SystemPromptResponseSerializer(serializers.Serializer):
 
     system_prompt = serializers.CharField(allow_blank=True)
     chatbot_name = serializers.CharField(allow_blank=True)
-    tennet_id = serializers.CharField(allow_blank=True)
+    tenant_id = serializers.CharField(allow_blank=True)
     files = PromptFileSerializer(many=True)

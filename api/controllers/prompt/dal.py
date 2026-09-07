@@ -4,8 +4,8 @@ from database.models import PromptFile, SystemPrompt
 from utils.enums import ActionType
 
 
-def find_prompt(tennet_id):
-    return SystemPrompt.objects.filter(tennet_id=tennet_id).first()
+def find_prompt(tenant_id):
+    return SystemPrompt.objects.filter(tenant_id=tenant_id).first()
 
 
 def find_any_prompt():
@@ -13,11 +13,11 @@ def find_any_prompt():
     return SystemPrompt.objects.first()
 
 
-def save_prompt(tennet_id, changes):
-    prompt = find_prompt(tennet_id)
+def save_prompt(tenant_id, changes):
+    prompt = find_prompt(tenant_id)
 
     if prompt is None:
-        return SystemPrompt.objects.create(tennet_id=tennet_id, **changes)
+        return SystemPrompt.objects.create(tenant_id=tenant_id, **changes)
 
     for field, value in changes.items():
         setattr(prompt, field, value)
@@ -28,8 +28,8 @@ def save_prompt(tennet_id, changes):
     return prompt
 
 
-def find_files(tennet_id):
-    return PromptFile.objects.filter(tennet_id=tennet_id).order_by("created_at")
+def find_files(tenant_id):
+    return PromptFile.objects.filter(tenant_id=tenant_id).order_by("created_at")
 
 
 def find_all_files():
@@ -44,9 +44,9 @@ def find_file(file_id):
     return PromptFile.objects.filter(id=ObjectId(file_id)).first()
 
 
-def create_file(tennet_id, name, s3_key, content_type, size, text):
+def create_file(tenant_id, name, s3_key, content_type, size, text):
     return PromptFile.objects.create(
-        tennet_id=tennet_id,
+        tenant_id=tenant_id,
         name=name,
         s3_key=s3_key,
         content_type=content_type,

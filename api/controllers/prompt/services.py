@@ -23,23 +23,23 @@ def current():
     }
 
 
-def read(tennet_id):
-    prompt = dal.find_prompt(tennet_id)
+def read(tenant_id):
+    prompt = dal.find_prompt(tenant_id)
 
     return SystemPromptResponseSerializer(
         {
             "system_prompt": prompt.body if prompt else "",
             "chatbot_name": prompt.chatbot_name if prompt else "",
-            "tennet_id": str(tennet_id),
+            "tenant_id": str(tenant_id),
             "files": [
-                _file_data(record) for record in dal.find_files(tennet_id)
+                _file_data(record) for record in dal.find_files(tenant_id)
             ],
         }
     ).data
 
 
 def update(payload):
-    tennet_id = payload["tennet_id"]
+    tenant_id = payload["tenant_id"]
     body = payload["system_prompt"].strip()
     name = payload["chatbot_name"].strip()
     uploads = payload["files"]
@@ -52,7 +52,7 @@ def update(payload):
 
     for document, text, key in zip(uploads, texts, keys):
         dal.create_file(
-            tennet_id=tennet_id,
+            tenant_id=tenant_id,
             name=document.name,
             s3_key=key,
             content_type=document.content_type or "",
@@ -70,9 +70,9 @@ def update(payload):
 
     if changes:
         changes["updated_by"] = payload["updated_by"]
-        dal.save_prompt(tennet_id, changes)
+        dal.save_prompt(tenant_id, changes)
 
-    return read(tennet_id)
+    return read(tenant_id)
 
 
 def remove(file_id):
@@ -88,10 +88,10 @@ def remove(file_id):
             messages["storageUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    tennet_id = record.tennet_id
+    tenant_id = record.tenant_id
     dal.delete_file(record)
 
-    return read(tennet_id)
+    return read(tenant_id)
 
 
 def _read_all(uploads):

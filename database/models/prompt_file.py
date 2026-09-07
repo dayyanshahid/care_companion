@@ -10,10 +10,10 @@ class PromptFile(models.Model):
     The bytes live in S3 under `s3_key`; `text` is what the assistant reads.
     Deleting a record is deliberate and removes only that document. A
     document belongs to the tenant that uploaded it and is read back only
-    against that `tennet_id`.
+    against that `tenant_id`.
     """
 
-    tennet_id = ObjectIdField(db_index=True, null=True, blank=True)
+    tenant_id = ObjectIdField(db_index=True, null=True, blank=True)
     name = models.CharField(max_length=255)
     s3_key = models.CharField(max_length=500)
     content_type = models.CharField(max_length=120, blank=True)
