@@ -50,15 +50,23 @@ def update(payload):
     if not body and not uploads:
         raise build_error(messages["nothingToUpdate"])
 
-    # Read every document before writing anything, so an unsupported file is
-    # refused outright rather than half-applied.
+    # Nothing is written until every document has been read and stored. A
+    # refused file type or an unreachable bucket must leave the prompt in
+    # force exactly as it was, rather than half-applying the update.
     texts = _read_all(uploads)
+    keys = _upload_all(uploads)
+
+    for document, text, key in zip(uploads, texts, keys):
+        dal.create_file(
+            name=document.name,
+            s3_key=key,
+            content_type=document.content_type or "",
+            size=document.size,
+            text=text,
+        )
 
     if body:
         dal.save_prompt(body, payload["updated_by"])
-
-    for document, text in zip(uploads, texts):
-        _store(document, text)
 
     return read()
 
@@ -90,21 +98,30 @@ def _read_all(uploads):
         ) from error
 
 
-def _store(document, text):
+def _upload_all(uploads):
+    """Every document reaches the bucket, or none of them stays there."""
+    keys = []
+
     try:
-        key = storage.upload(document)
+        for document in uploads:
+            keys.append(storage.upload(document))
     except StorageError as error:
+        for key in keys:
+            _discard(key)
+
         raise build_error(
             messages["storageUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    return dal.create_file(
-        name=document.name,
-        s3_key=key,
-        content_type=document.content_type or "",
-        size=document.size,
-        text=text,
-    )
+    return keys
+
+
+def _discard(key):
+    """Undo one upload. The failure being reported is the one that matters."""
+    try:
+        storage.delete(key)
+    except StorageError:
+        pass
 
 
 def _file_data(record):
