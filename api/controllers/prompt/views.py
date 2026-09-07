@@ -3,16 +3,25 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.controllers.prompt import services
-from database.serializers import SystemPromptPayloadSerializer
+from database.serializers import (
+    SystemPromptPayloadSerializer,
+    TennetQuerySerializer,
+)
 from utils.common import response
 from utils.messages import messages
 
 
 @api_view(["GET"])
 def get_prompt(request):
-    """The prompt in force, and every document stored behind it."""
+    """One tenant's prompt and the documents stored behind it."""
+    query = TennetQuerySerializer(data=request.query_params)
+    query.is_valid(raise_exception=True)
+
     return Response(
-        response.success(messages["promptFetched"], data=services.read())
+        response.success(
+            messages["promptFetched"],
+            data=services.read(query.validated_data["tennet_id"]),
+        )
     )
 
 

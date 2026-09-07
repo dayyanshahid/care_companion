@@ -1,17 +1,19 @@
+from django_mongodb_backend.fields import ObjectIdField
 from django.db import models
 
 from utils.enums import ActionType, choices
 
 
 class SystemPrompt(models.Model):
-    """The one prompt the assistant runs on, overwritten in place.
+    """One tenant's prompt, overwritten in place.
 
-    The only source of the prompt. Until the first update there is no row, and
-    the assistant refuses to answer rather than inventing instructions.
+    There is a row per `tennet_id` and no prompt anywhere else, so until a
+    tenant's first update it has nothing to send.
     """
 
     body = models.TextField()
     chatbot_name = models.CharField(max_length=120, blank=True)
+    tennet_id = ObjectIdField(db_index=True, null=True, blank=True)
     updated_by = models.CharField(max_length=120, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

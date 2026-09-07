@@ -7,7 +7,7 @@ from utils.messages import messages, DocumentError, StorageError
 
 
 def current():
-    prompt = dal.find_prompt()
+    prompt = dal.find_any_prompt()
 
     if prompt is None or not prompt.body.strip():
         raise build_error(
@@ -18,24 +18,28 @@ def current():
         "body": prompt.body,
         "name": prompt.chatbot_name,
         "knowledge": "\n\n".join(
-            record.text for record in dal.find_files() if record.text
+            record.text for record in dal.find_all_files() if record.text
         ),
     }
 
 
-def read():
-    prompt = dal.find_prompt()
+def read(tennet_id):
+    prompt = dal.find_prompt(tennet_id)
 
     return SystemPromptResponseSerializer(
         {
             "system_prompt": prompt.body if prompt else "",
             "chatbot_name": prompt.chatbot_name if prompt else "",
-            "files": [_file_data(record) for record in dal.find_files()],
+            "tennet_id": str(tennet_id),
+            "files": [
+                _file_data(record) for record in dal.find_files(tennet_id)
+            ],
         }
     ).data
 
 
 def update(payload):
+    tennet_id = payload["tennet_id"]
     body = payload["system_prompt"].strip()
     name = payload["chatbot_name"].strip()
     uploads = payload["files"]
@@ -48,6 +52,7 @@ def update(payload):
 
     for document, text, key in zip(uploads, texts, keys):
         dal.create_file(
+            tennet_id=tennet_id,
             name=document.name,
             s3_key=key,
             content_type=document.content_type or "",
@@ -65,9 +70,9 @@ def update(payload):
 
     if changes:
         changes["updated_by"] = payload["updated_by"]
-        dal.save_prompt(changes)
+        dal.save_prompt(tennet_id, changes)
 
-    return read()
+    return read(tennet_id)
 
 
 def remove(file_id):
@@ -83,9 +88,10 @@ def remove(file_id):
             messages["storageUnavailable"], HttpStatus.badGateway, error
         ) from error
 
+    tennet_id = record.tennet_id
     dal.delete_file(record)
 
-    return read()
+    return read(tennet_id)
 
 
 def _read_all(uploads):

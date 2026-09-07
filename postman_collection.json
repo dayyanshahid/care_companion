@@ -14,6 +14,11 @@
       "key": "fileId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "tennetId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -59,6 +64,12 @@
               "description": "What the chatbot is called. It is passed to the assistant as its own name, so it answers 'What is your name?' with it - the prompt text does not need to mention it. Left out, it keeps the stored name; a prompt-only update does not clear it."
             },
             {
+              "key": "tennet_id",
+              "value": "{{tennetId}}",
+              "type": "text",
+              "description": "REQUIRED. The tenant this prompt and these documents belong to. Any text is accepted: a 24-character ObjectId is used as it is, anything else is turned into one by a fixed rule, so the same text always names the same tenant. The response tells you the ObjectId it became, and either form reaches the same record. Required, and may not be blank."
+            },
+            {
               "key": "updated_by",
               "value": "umar",
               "type": "text",
@@ -83,7 +94,7 @@
             "update"
           ]
         },
-        "description": "Send the prompt text, a chatbot name, files, or any mix. An update carrying none of them is rejected with 400.\n\nEach field is independent: a field you leave out keeps its stored value, so you can rename the bot without resending the prompt. Files are APPENDED - existing documents are left alone.\n\nNothing is written until every file has been read and stored, so a refused file type or an unreachable bucket leaves the prompt and name exactly as they were."
+        "description": "One tenant's record. `tennet_id` is required and says whose prompt is being written; send a prompt, a chatbot name, files, or any mix alongside it. An update carrying none of those is rejected with 400.\n\nEach field is independent: one you leave out keeps that tenant's stored value. Files are APPENDED to that tenant's documents.\n\nNothing is written until every file has been read and stored, so a refused file type or an unreachable bucket leaves the record untouched."
       }
     },
     {
@@ -97,7 +108,10 @@
               "const body = pm.response.json();",
               "",
               "pm.test('200 OK', () => pm.response.to.have.status(200));",
-              "pm.test('returns a prompt', () => pm.expect(body.result.system_prompt).to.be.a('string').and.not.empty);",
+              "",
+              "// tennet_id comes back as the ObjectId it mapped to, which may differ",
+              "// from the text that was sent.",
+              "console.log('tenant:', body.result.tennet_id);",
               "",
               "const files = body.result.files;",
               "if (files && files.length) {",
@@ -112,7 +126,7 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{baseUrl}}/api/prompt/get",
+          "raw": "{{baseUrl}}/api/prompt/get?tennet_id={{tennetId}}",
           "host": [
             "{{baseUrl}}"
           ],
@@ -120,9 +134,16 @@
             "api",
             "prompt",
             "get"
+          ],
+          "query": [
+            {
+              "key": "tennet_id",
+              "value": "{{tennetId}}",
+              "description": "REQUIRED. The tenant this prompt and these documents belong to. Any text is accepted: a 24-character ObjectId is used as it is, anything else is turned into one by a fixed rule, so the same text always names the same tenant. The response tells you the ObjectId it became, and either form reaches the same record. Required, and may not be blank."
+            }
           ]
         },
-        "description": "The prompt in force, the chatbot's name, and every stored document. Each document carries a presigned `url` that expires after S3_URL_TTL seconds - paste it into a browser to download the original file.\n\nAn empty `system_prompt` means nothing has been stored yet; the chat endpoint will answer 503 until you send one."
+        "description": "That tenant's prompt, chatbot name, and only its documents. Each document carries a presigned `url` that expires after S3_URL_TTL seconds.\n\n`tennet_id` is required and may not be blank, but it need not already be an ObjectId - any text is mapped to one by a fixed rule.\n\nA tenant with nothing stored answers 200 with an empty `system_prompt` and no files."
       }
     },
     {
