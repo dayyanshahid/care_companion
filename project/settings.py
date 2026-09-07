@@ -63,8 +63,13 @@ REST_FRAMEWORK = {
 
 # --- OpenAI (Chat + Embeddings) ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5")
 OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
+
+# --- Retrieval over the uploaded documents ---
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "512"))
+RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "6"))
 
 # --- S3 (uploaded prompt documents) ---
 # S3_ENDPOINT is set for an S3-compatible store; left blank, boto3 talks to AWS.
@@ -77,8 +82,6 @@ S3_PROMPT_FILES_PREFIX = os.environ.get(
     "S3_PROMPT_FILES_PREFIX", "prompt-files"
 ).strip("/")
 S3_URL_TTL = int(os.environ.get("S3_URL_TTL", "3600"))
-
-ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/api/assets").rstrip("/")
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

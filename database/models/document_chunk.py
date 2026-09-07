@@ -1,14 +1,16 @@
-from django_mongodb_backend.fields import ObjectIdField
+from django_mongodb_backend.fields import ArrayField, ObjectIdField
 from django.db import models
 
 from utils.enums import ActionType, choices
 
 
-class SystemPrompt(models.Model):
-    body = models.TextField()
-    chatbot_name = models.CharField(max_length=120, blank=True)
+class DocumentChunk(models.Model):
     tenant_id = ObjectIdField(db_index=True, null=True, blank=True)
-    updated_by = models.CharField(max_length=120, blank=True)
+    file_id = ObjectIdField(db_index=True, null=True, blank=True)
+    ordinal = models.IntegerField(default=0)
+
+    text = models.TextField()
+    embedding = ArrayField(models.FloatField(), default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -20,4 +22,5 @@ class SystemPrompt(models.Model):
 
     class Meta:
         app_label = "database"
-        db_table = "system_prompts"
+        db_table = "document_chunks"
+        ordering = ["ordinal"]

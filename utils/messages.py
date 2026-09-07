@@ -35,6 +35,9 @@ messages = {
         "{name} is not a supported document. Upload .docx, .txt or .md."
     ),
     "fileUnreadable": "That document could not be read.",
+    "documentsUnavailable": (
+        "The documents could not be prepared right now. Please try again."
+    ),
     "storageUnavailable": (
         "The document store is unavailable right now. Please try again."
     ),
@@ -72,3 +75,7 @@ class StorageError(AppError):
 
 class DocumentError(AppError):
     key = "fileUnreadable"
+
+
+class EmbeddingError(AppError):
+    key = "documentsUnavailable"

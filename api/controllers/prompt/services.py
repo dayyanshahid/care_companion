@@ -1,12 +1,21 @@
+import hashlib
+
 from api.controllers.prompt import dal
 from database.serializers import SystemPromptResponseSerializer
-from utils import documents, storage
+from django.conf import settings
+
+from utils import documents, embeddings, storage
 from utils.common import build_error
 from utils.enums import HttpStatus
-from utils.messages import messages, DocumentError, StorageError
+from utils.messages import (
+    messages,
+    DocumentError,
+    EmbeddingError,
+    StorageError,
+)
 
 
-def current(tenant_id):
+def current(tenant_id, query=""):
     prompt = dal.find_prompt(tenant_id)
 
     if prompt is None or not prompt.body.strip():
@@ -17,12 +26,30 @@ def current(tenant_id):
     return {
         "body": prompt.body,
         "name": prompt.chatbot_name,
-        "knowledge": "\n\n".join(
-            record.text
-            for record in dal.find_files(tenant_id)
-            if record.text
-        ),
+        "knowledge": retrieve(tenant_id, query),
     }
+
+
+def retrieve(tenant_id, query):
+    """The passages of this tenant's documents that bear on `query`."""
+    if not query.strip():
+        return ""
+
+    chunks = list(dal.find_chunks(tenant_id))
+
+    if not chunks:
+        return ""
+
+    try:
+        vector = embeddings.embed([query])[0]
+    except EmbeddingError as error:
+        raise build_error(
+            messages["documentsUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
+    best = embeddings.rank(vector, chunks, settings.RAG_TOP_K)
+
+    return "\n\n".join(chunk.text for chunk, _ in best)
 
 
 def read(tenant_id):
@@ -81,48 +108,114 @@ def remove(file_id):
         ) from error
 
     tenant_id = record.tenant_id
+    dal.delete_chunks(record.id)
     dal.delete_file(record)
 
     return read(tenant_id)
 
 
 def _sync_files(tenant_id, uploads, texts):
-    keys = _upload_all(uploads)
+    """Make this tenant's documents exactly the ones that were sent.
+
+    A name already stored is rewritten with the file that came with it, a new
+    name is added, and a name that did not arrive is removed with its chunks.
+    Sending no files therefore leaves the tenant with none.
+
+    A file whose contents have not changed is left alone: not uploaded again,
+    and not embedded again.
+
+    Everything reaches S3 and is embedded before a single record changes, so a
+    bucket that cannot be written or an embedding that fails leaves the
+    documents exactly as they were.
+    """
     stored = {}
 
+    # A name can hold more than one record: appending was once allowed, so a
+    # tenant may still carry duplicates. One survives, the rest are dropped.
     for record in dal.find_files(tenant_id):
         stored.setdefault(record.name, []).append(record)
 
-    for document, text, key in zip(uploads, texts, keys):
-        previous = stored.pop(document.name, [])
+    incoming = []
 
-        if not previous:
-            dal.create_file(
+    for document, text in zip(uploads, texts):
+        previous = stored.pop(document.name, [])
+        kept = previous[0] if previous else None
+
+        for spare in previous[1:]:
+            _drop(spare)
+
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        if kept is not None and kept.content_hash == digest:
+            continue
+
+        incoming.append((document, text, digest, kept))
+
+    keys = _upload_all([item[0] for item in incoming])
+
+    try:
+        pieces = _embed_all([item[1] for item in incoming])
+    except Exception:
+        for key in keys:
+            _discard(key)
+        raise
+
+    for (document, text, digest, kept), key, chunks in zip(incoming, keys, pieces):
+        if kept is None:
+            record = dal.create_file(
                 tenant_id=tenant_id,
                 name=document.name,
                 s3_key=key,
                 content_type=document.content_type or "",
                 size=document.size,
                 text=text,
+                content_hash=digest,
             )
-            continue
+        else:
+            replaced = kept.s3_key
+            record = dal.update_file(
+                kept, key, document.content_type or "", document.size,
+                text, digest,
+            )
+            dal.delete_chunks(record.id)
+            _discard(replaced)
 
-        kept, spares = previous[0], previous[1:]
-        replaced = kept.s3_key
-
-        dal.update_file(
-            kept, key, document.content_type or "", document.size, text
-        )
-        _discard(replaced)
-
-        for spare in spares:
-            _discard(spare.s3_key)
-            dal.delete_file(spare)
+        dal.create_chunks(tenant_id, record.id, chunks)
 
     for records in stored.values():
         for record in records:
-            _discard(record.s3_key)
-            dal.delete_file(record)
+            _drop(record)
+
+
+def _drop(record):
+    """Remove a document completely: its chunks, its object, its row."""
+    _discard(record.s3_key)
+    dal.delete_chunks(record.id)
+    dal.delete_file(record)
+
+
+def _embed_all(texts):
+    """Chunk each document and embed the lot in as few calls as possible."""
+    per_document = [documents.chunk(text) for text in texts]
+    flat = [piece for pieces in per_document for piece in pieces]
+
+    if not flat:
+        return [[] for _ in texts]
+
+    try:
+        vectors = embeddings.embed(flat)
+    except EmbeddingError as error:
+        raise build_error(
+            messages["documentsUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
+    out, cursor = [], 0
+
+    for pieces in per_document:
+        out.append(list(zip(pieces, vectors[cursor:cursor + len(pieces)])))
+        cursor += len(pieces)
+
+    return out
 
 
 def _read_all(uploads):

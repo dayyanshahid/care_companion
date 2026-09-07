@@ -13,6 +13,10 @@ from utils.messages import messages, AssistantError
 
 HISTORY_LIMIT = 40
 
+# How much of the conversation shapes what is retrieved. One short reply
+# ("yes", "how much?") is not enough on its own to find anything by.
+QUERY_TURNS = 3
+
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
 
 _openai_client = None
@@ -47,7 +51,7 @@ def send_message(body):
 
     try:
         history = conversation(conv_id, text)
-        prompt = build_prompt(tenant_id, values)
+        prompt = build_prompt(tenant_id, values, search_query(history))
         answer = resolve_label(ask_openai(prompt, history), prompt)
     except AssistantError as error:
         raise build_error(
@@ -90,9 +94,14 @@ def conversation(conv_id, text):
         {"role": MessageRole.user, "content": text},
     ][-HISTORY_LIMIT:]
 
-def build_prompt(tenant_id, values):
-    stored = prompt_service.current(tenant_id)
-    parts = [system_prompt.fill(stored["body"], values)]
+def search_query(history):
+    """What to look the documents up by: the last few turns, not one word."""
+    return "\n".join(turn["content"] for turn in history[-QUERY_TURNS:])
+
+
+def build_prompt(tenant_id, values, query=""):
+    stored = prompt_service.current(tenant_id, query)
+    parts = [stored["body"]]
 
     if stored["name"]:
         parts.append(
@@ -105,7 +114,7 @@ def build_prompt(tenant_id, values):
 
     parts.append(f"PATIENT RECORD:\n{values['record']}")
 
-    return "\n\n".join(parts)
+    return system_prompt.fill("\n\n".join(parts), values)
 
 def resolve_label(answer, prompt):
     label = answer.strip().strip("*#.:").strip().upper()
