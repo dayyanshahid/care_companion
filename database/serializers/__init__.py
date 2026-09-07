@@ -6,7 +6,7 @@ from database.serializers.prompt_serializers import (
     PromptFileSerializer,
     SystemPromptPayloadSerializer,
     SystemPromptResponseSerializer,
-    TennetQuerySerializer,
+    TenantQuerySerializer,
 )
 
 __all__ = [
@@ -15,5 +15,5 @@ __all__ = [
     "PromptFileSerializer",
     "SystemPromptPayloadSerializer",
     "SystemPromptResponseSerializer",
-    "TennetQuerySerializer",
+    "TenantQuerySerializer",
 ]

@@ -67,7 +67,7 @@
               "key": "tenant_id",
               "value": "{{tenantId}}",
               "type": "text",
-              "description": "REQUIRED. The tenant this prompt and these documents belong to. Any text is accepted: a 24-character ObjectId is used as it is, anything else is turned into one by a fixed rule, so the same text always names the same tenant. The response tells you the ObjectId it became, and either form reaches the same record. Required, and may not be blank."
+              "description": "REQUIRED. The tenant's ObjectId, stored exactly as sent - nothing is derived or padded. It must be a real 24-character ObjectId; anything else answers 400."
             },
             {
               "key": "updated_by",
@@ -108,10 +108,8 @@
               "const body = pm.response.json();",
               "",
               "pm.test('200 OK', () => pm.response.to.have.status(200));",
-              "",
-              "// tenant_id comes back as the ObjectId it mapped to, which may differ",
-              "// from the text that was sent.",
-              "console.log('tenant:', body.result.tenant_id);",
+              "pm.test('answers for the tenant asked for',",
+              "    () => pm.expect(body.result.tenant_id).to.eql(pm.collectionVariables.get('tenantId')));",
               "",
               "const files = body.result.files;",
               "if (files && files.length) {",
@@ -139,11 +137,11 @@
             {
               "key": "tenant_id",
               "value": "{{tenantId}}",
-              "description": "REQUIRED. The tenant this prompt and these documents belong to. Any text is accepted: a 24-character ObjectId is used as it is, anything else is turned into one by a fixed rule, so the same text always names the same tenant. The response tells you the ObjectId it became, and either form reaches the same record. Required, and may not be blank."
+              "description": "REQUIRED. The tenant's ObjectId, stored exactly as sent - nothing is derived or padded. It must be a real 24-character ObjectId; anything else answers 400."
             }
           ]
         },
-        "description": "That tenant's prompt, chatbot name, and only its documents. Each document carries a presigned `url` that expires after S3_URL_TTL seconds.\n\n`tenant_id` is required and may not be blank, but it need not already be an ObjectId - any text is mapped to one by a fixed rule.\n\nA tenant with nothing stored answers 200 with an empty `system_prompt` and no files."
+        "description": "That tenant's prompt, chatbot name, and only its documents. Each document carries a presigned `url` that expires after S3_URL_TTL seconds.\n\n`tenant_id` is required and must be a real 24-character ObjectId; it is stored and returned exactly as sent.\n\nA tenant with nothing stored answers 200 with an empty `system_prompt` and no files."
       }
     },
     {

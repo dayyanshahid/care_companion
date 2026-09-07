@@ -1,31 +1,26 @@
-import hashlib
-
 from bson import ObjectId
 from rest_framework import serializers
 
+from utils.messages import messages
+
 
 class ObjectIdField(serializers.CharField):
-    """A tenant id, as an ObjectId.
+    """A tenant id: a real ObjectId, stored exactly as it was given.
 
-    A real 24-character ObjectId is kept as it is. Anything else is turned
-    into one by hashing the text, so a caller may name a tenant however they
-    like and still get a usable id. The mapping is fixed, so the same text
-    always names the same tenant, and the id it produces maps to itself -
-    either form reaches the same record.
+    Nothing is derived or padded. An id that is not a 24-character ObjectId
+    is refused rather than turned into some other tenant's id quietly.
     """
 
     def to_internal_value(self, data):
         value = super().to_internal_value(data).strip()
 
-        if ObjectId.is_valid(value):
-            return ObjectId(value)
+        if not ObjectId.is_valid(value):
+            raise serializers.ValidationError(messages["invalidTenantId"])
 
-        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-        return ObjectId(digest[:24])
+        return ObjectId(value)
 
 
-class TennetQuerySerializer(serializers.Serializer):
+class TenantQuerySerializer(serializers.Serializer):
     """Whose prompt and documents to read."""
 
     tenant_id = ObjectIdField()

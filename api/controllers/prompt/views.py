@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from api.controllers.prompt import services
 from database.serializers import (
     SystemPromptPayloadSerializer,
-    TennetQuerySerializer,
+    TenantQuerySerializer,
 )
 from utils.common import response
 from utils.messages import messages
@@ -14,7 +14,7 @@ from utils.messages import messages
 @api_view(["GET"])
 def get_prompt(request):
     """One tenant's prompt and the documents stored behind it."""
-    query = TennetQuerySerializer(data=request.query_params)
+    query = TenantQuerySerializer(data=request.query_params)
     query.is_valid(raise_exception=True)
 
     return Response(
