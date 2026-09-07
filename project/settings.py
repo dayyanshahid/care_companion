@@ -34,7 +34,7 @@ ASGI_APPLICATION = "project.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {"context_processors": []},
     },
@@ -48,11 +48,6 @@ DATABASES = {
     }
 }
 
-
-CENTRAL_MONGODB_URI = os.environ.get("CENTRAL_MONGODB_URI", "")
-CENTRAL_MONGODB_DB = os.environ.get(
-    "CENTRAL_MONGODB_DB", "synaptix_central_admin_portal_demo"
-)
 
 DEFAULT_AUTO_FIELD = "django_mongodb_backend.fields.ObjectIdAutoField"
 
@@ -70,43 +65,8 @@ REST_FRAMEWORK = {
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
-RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
-
-CARE_COMPANION_PHONE = os.environ.get("CARE_COMPANION_PHONE", "")
-
-FRONTEND_PATH = os.environ.get("FRONTEND_PATH", "/chat")
 
 ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/api/assets").rstrip("/")
-
-MS_GRAPH_TENANT_ID = os.environ.get("MS_GRAPH_TENANT_ID", "")
-MS_GRAPH_CLIENT_ID = os.environ.get("MS_GRAPH_CLIENT_ID", "")
-MS_GRAPH_CLIENT_SECRET = os.environ.get("MS_GRAPH_CLIENT_SECRET", "")
-MS_GRAPH_SENDER_EMAIL = os.environ.get("MS_GRAPH_SENDER_EMAIL", "")
-MS_GRAPH_TIMEOUT = int(os.environ.get("MS_GRAPH_TIMEOUT", "15"))
-MS_GRAPH_SAVE_TO_SENT_ITEMS = (
-    os.environ.get("MS_GRAPH_SAVE_TO_SENT_ITEMS", "false").lower() == "true"
-)
-
-MS_GRAPH_CONFIGURED = all(
-    (
-        MS_GRAPH_TENANT_ID,
-        MS_GRAPH_CLIENT_ID,
-        MS_GRAPH_CLIENT_SECRET,
-        MS_GRAPH_SENDER_EMAIL,
-    )
-)
-
-DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", MS_GRAPH_SENDER_EMAIL or "care-companion@example.com"
-)
-
-EMAIL_BACKEND = os.environ.get(
-    "EMAIL_BACKEND",
-    "utils.graph_mail.GraphEmailBackend"
-    if MS_GRAPH_CONFIGURED
-    else "django.core.mail.backends.console.EmailBackend",
-)
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

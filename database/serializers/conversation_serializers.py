@@ -1,39 +1,9 @@
 from rest_framework import serializers
 
-from database.models import RemoteEnrollement
-
 
 def optional():
-    """A patient field the caller may omit; the prompt reads a blank as unknown."""
+    """A patient field the caller may omit; a blank reads as unknown."""
     return serializers.CharField(required=False, allow_blank=True, default="")
-
-
-class ChatStartSerializer(serializers.Serializer):
-    patient_id = serializers.CharField(max_length=64)
-
-
-class ChatSerializer(serializers.ModelSerializer):
-    conv_id = serializers.CharField(read_only=True)
-    conv_ids = serializers.ListField(
-        child=serializers.CharField(), read_only=True
-    )
-
-    class Meta:
-        model = RemoteEnrollement
-        fields = [
-            "conv_id",
-            "conv_ids",
-            "patient_id",
-            "patient_name",
-            "provider",
-            "practice",
-            "recency",
-            "status",
-            "practice_phone",
-            "alert_at",
-            "created_at",
-            "updated_at",
-        ]
 
 
 class CaregiverSerializer(serializers.Serializer):
@@ -61,8 +31,7 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
     """One stateless turn: the patient's record and their message, in full.
 
     Only conv_id and text are required. The rest personalises the reply, and
-    every one of them is safe to leave out - the prompt and the scripts both
-    fall back when a value is blank.
+    every one of them is safe to leave out.
 
     The conversation so far is not sent: it is read from the stored
     transcript for this conv_id.

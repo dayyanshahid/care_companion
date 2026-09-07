@@ -23,11 +23,6 @@ class MessageRole(StrEnum):
     assistant = "assistant"
 
 
-class CaptureType(StrEnum):
-    remote = "remote"
-    onsite = "onsite"
-
-
 class ActionType(IntEnum):
     Created = 1
     Updated = 2
