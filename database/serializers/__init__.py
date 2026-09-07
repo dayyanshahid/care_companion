@@ -1,3 +1,4 @@
+from database.serializers.fields import ObjectIdField
 from database.serializers.conversation_serializers import (
     ChatMessagePayloadSerializer,
     ChatMessageResponseSerializer,
@@ -10,6 +11,7 @@ from database.serializers.prompt_serializers import (
 )
 
 __all__ = [
+    "ObjectIdField",
     "ChatMessagePayloadSerializer",
     "ChatMessageResponseSerializer",
     "PromptFileSerializer",

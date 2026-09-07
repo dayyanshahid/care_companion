@@ -13,7 +13,6 @@ from utils.messages import messages
 
 @api_view(["GET"])
 def get_prompt(request):
-    """One tenant's prompt and the documents stored behind it."""
     query = TenantQuerySerializer(data=request.query_params)
     query.is_valid(raise_exception=True)
 
@@ -28,7 +27,6 @@ def get_prompt(request):
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def update_prompt(request):
-    """Overwrite the prompt, add documents, or both."""
     payload = SystemPromptPayloadSerializer(data=request.data)
     payload.is_valid(raise_exception=True)
 
@@ -42,7 +40,6 @@ def update_prompt(request):
 
 @api_view(["DELETE"])
 def delete_prompt_file(request, file_id):
-    """Remove one document. The others are untouched."""
     return Response(
         response.success(
             messages["promptFileDeleted"], data=services.remove(file_id)

@@ -6,8 +6,8 @@ from utils.enums import HttpStatus
 from utils.messages import messages, DocumentError, StorageError
 
 
-def current():
-    prompt = dal.find_any_prompt()
+def current(tenant_id):
+    prompt = dal.find_prompt(tenant_id)
 
     if prompt is None or not prompt.body.strip():
         raise build_error(
@@ -18,7 +18,9 @@ def current():
         "body": prompt.body,
         "name": prompt.chatbot_name,
         "knowledge": "\n\n".join(
-            record.text for record in dal.find_all_files() if record.text
+            record.text
+            for record in dal.find_files(tenant_id)
+            if record.text
         ),
     }
 
@@ -85,20 +87,9 @@ def remove(file_id):
 
 
 def _sync_files(tenant_id, uploads, texts):
-    """Make this tenant's documents exactly the ones that were sent.
-
-    A name already stored is rewritten with the file that came with it, a new
-    name is added, and a name that did not arrive is removed. Sending no files
-    therefore leaves the tenant with none.
-
-    Every upload reaches S3 before a single record changes, so a bucket that
-    cannot be written leaves the documents as they were.
-    """
     keys = _upload_all(uploads)
     stored = {}
 
-    # A name can hold more than one record: appending was once allowed, so a
-    # tenant may still carry duplicates. One survives, the rest are dropped.
     for record in dal.find_files(tenant_id):
         stored.setdefault(record.name, []).append(record)
 

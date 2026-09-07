@@ -13,7 +13,7 @@ from utils.messages import messages, AssistantError
 
 HISTORY_LIMIT = 40
 
-SKIP_FIELDS = {"conv_id", "text"}
+SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
 
 _openai_client = None
 
@@ -41,12 +41,13 @@ def read_body(body):
     }
 
 def send_message(body):
+    tenant_id = body["tenant_id"]
     conv_id, text = body["conv_id"], body["text"]
     values = read_body(body)
 
     try:
         history = conversation(conv_id, text)
-        prompt = build_prompt(values)
+        prompt = build_prompt(tenant_id, values)
         answer = resolve_label(ask_openai(prompt, history), prompt)
     except AssistantError as error:
         raise build_error(
@@ -89,8 +90,8 @@ def conversation(conv_id, text):
         {"role": MessageRole.user, "content": text},
     ][-HISTORY_LIMIT:]
 
-def build_prompt(values):
-    stored = prompt_service.current()
+def build_prompt(tenant_id, values):
+    stored = prompt_service.current(tenant_id)
     parts = [system_prompt.fill(stored["body"], values)]
 
     if stored["name"]:

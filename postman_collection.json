@@ -188,7 +188,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"conv_id\": \"postman-test-1\",\n  \"text\": \"What is Care Companion?\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Nexus Healthcare\",\n  \"practice_phone\": \"555-0100\",\n  \"providerName\": \"Dr Shafi\",\n  \"caregivers\": [],\n  \"codes\": [],\n  \"programs\": []\n}",
+          "raw": "{\n  \"tenant_id\": \"{{tenantId}}\",\n  \"conv_id\": \"postman-test-1\",\n  \"text\": \"What is Care Companion?\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Nexus Healthcare\",\n  \"practice_phone\": \"555-0100\",\n  \"providerName\": \"Dr Shafi\",\n  \"caregivers\": [],\n  \"codes\": [],\n  \"programs\": []\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -206,7 +206,7 @@
             "message"
           ]
         },
-        "description": "The assistant now builds its instructions from the stored prompt plus every document's text. Send this after an update to confirm the new prompt is the one in use.\n\nNeeds OPENAI_API_KEY set."
+        "description": "`tenant_id` is required and decides everything the assistant answers with: that tenant's prompt, its chatbot name, and only its documents. Another tenant's documents are never read.\n\nA tenant with no stored prompt answers 503 rather than falling back to anyone else's.\n\nNeeds OPENAI_API_KEY set."
       }
     }
   ]

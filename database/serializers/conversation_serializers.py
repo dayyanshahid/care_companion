@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from database.serializers.fields import ObjectIdField
+
 
 def optional():
     """A patient field the caller may omit; a blank reads as unknown."""
@@ -30,13 +32,17 @@ class ConditionCodeSerializer(serializers.Serializer):
 class ChatMessagePayloadSerializer(serializers.Serializer):
     """One stateless turn: the patient's record and their message, in full.
 
-    Only conv_id and text are required. The rest personalises the reply, and
-    every one of them is safe to leave out.
+    Only tenant_id, conv_id and text are required. The rest personalises the
+    reply, and every one of them is safe to leave out.
+
+    `tenant_id` says whose prompt and whose documents the assistant answers
+    with; it never reads another tenant's.
 
     The conversation so far is not sent: it is read from the stored
     transcript for this conv_id.
     """
 
+    tenant_id = ObjectIdField()
     conv_id = serializers.CharField()
     text = serializers.CharField()
 

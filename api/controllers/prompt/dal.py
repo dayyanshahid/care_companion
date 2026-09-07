@@ -8,11 +8,6 @@ def find_prompt(tenant_id):
     return SystemPrompt.objects.filter(tenant_id=tenant_id).first()
 
 
-def find_any_prompt():
-    """Whatever prompt is stored, tenant or not. Only the chatbot reads this."""
-    return SystemPrompt.objects.first()
-
-
 def save_prompt(tenant_id, changes):
     prompt = find_prompt(tenant_id)
 
@@ -30,11 +25,6 @@ def save_prompt(tenant_id, changes):
 
 def find_files(tenant_id):
     return PromptFile.objects.filter(tenant_id=tenant_id).order_by("created_at")
-
-
-def find_all_files():
-    """Every document, whoever owns it. Only the chatbot reads this."""
-    return PromptFile.objects.order_by("created_at")
 
 
 def find_file(file_id):
