@@ -4,6 +4,7 @@ import openai
 from django.conf import settings
 
 from api.controllers.chatbot import dal
+from api.controllers.prompt import services as prompt_service
 from database.serializers import ChatMessageResponseSerializer
 from utils import system_prompt
 from utils.common import build_error
@@ -89,7 +90,15 @@ def conversation(conv_id, text):
     ][-HISTORY_LIMIT:]
 
 def build_prompt(values):
-    return f"{system_prompt.fill(values)}\n\nPATIENT RECORD:\n{values['record']}"
+    stored = prompt_service.current()
+    parts = [system_prompt.fill(stored["body"], values)]
+
+    if stored["knowledge"]:
+        parts.append(f"APPROVED DOCUMENTS:\n{stored['knowledge']}")
+
+    parts.append(f"PATIENT RECORD:\n{values['record']}")
+
+    return "\n\n".join(parts)
 
 def resolve_label(answer, prompt):
     label = answer.strip().strip("*#.:").strip().upper()

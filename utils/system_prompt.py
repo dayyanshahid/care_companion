@@ -1,7 +1,8 @@
-import re
-from pathlib import Path
+"""Shaping a stored prompt for one patient.
 
-PROMPT = (Path(__file__).parent / "system_prompt.md").read_text(encoding="utf-8")
+The prompt itself comes from the database; nothing here reads it from disk.
+"""
+import re
 
 PLACEHOLDERS = {
     "[Patient Name]": "patient_name",
@@ -12,8 +13,8 @@ PLACEHOLDERS = {
 }
 
 
-def fill(values):
-    text = PROMPT
+def fill(body, values):
+    text = body
 
     for placeholder, field in PLACEHOLDERS.items():
         value = (values.get(field) or "").strip()
@@ -28,8 +29,12 @@ def fill(values):
 
 
 def templates(prompt):
-    section = prompt.split("## 6. REVIEWED WORDING")[1].split("\n## 7.")[0]
-    blocks = re.split(r"\n### ", section)[1:]
+    _, marker, rest = prompt.partition("## 6. REVIEWED WORDING")
+
+    if not marker:
+        return {}
+
+    blocks = re.split(r"\n### ", rest.split("\n## 7.")[0])[1:]
 
     return {
         name.strip().upper(): _unwrap(body.strip())

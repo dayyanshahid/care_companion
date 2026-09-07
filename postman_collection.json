@@ -1,0 +1,188 @@
+{
+  "info": {
+    "name": "Care Companion - System Prompt",
+    "description": "The system prompt the assistant runs on, and the documents behind it.\n\nUpdate overwrites the prompt body and APPENDS files. Delete removes one document from S3 and Mongo and leaves the others standing.\n\nThe database is the only source of the prompt - nothing is shipped on disk. Until a prompt is stored, GET returns an empty `system_prompt` and the chat endpoint answers 503.\n\nSet the `baseUrl` variable to your server. `fileId` is filled in automatically by the Update and Get requests, so Delete is ready to send.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "fileId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Update prompt and add documents",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('succeeded', () => pm.expect(body.success).to.be.true);",
+              "",
+              "// Remember the first document so the Delete request is ready to send.",
+              "const files = body.result && body.result.files;",
+              "if (files && files.length) {",
+              "    pm.collectionVariables.set('fileId', files[0].id);",
+              "    console.log('fileId set to', files[0].id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "system_prompt",
+              "value": "## 1. WHO YOU ARE\n\nYou are the Care Companion team's secure automated AI assistant...",
+              "type": "text",
+              "description": "The prompt body. Overwrites whatever is stored, and is the assistant's only instructions - keep the '## 6. REVIEWED WORDING' section or the reviewed emergency and consent wording stops being substituted. Leave this row disabled to add files without touching the prompt."
+            },
+            {
+              "key": "updated_by",
+              "value": "umar",
+              "type": "text",
+              "description": "Optional. Who made the change."
+            },
+            {
+              "key": "files",
+              "type": "file",
+              "src": [],
+              "description": "Pick one or more .docx, .txt or .md files. Their text is extracted and appended to the prompt as approved documents; the file itself goes to S3."
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/prompt/update",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "prompt",
+            "update"
+          ]
+        },
+        "description": "Send the prompt text, the files, or both. An update carrying neither is rejected with 400.\n\nFiles are APPENDED - existing documents are left alone. An unsupported file type is refused before anything is written, so nothing is half-applied."
+      }
+    },
+    {
+      "name": "Get prompt and documents",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('returns a prompt', () => pm.expect(body.result.system_prompt).to.be.a('string').and.not.empty);",
+              "",
+              "const files = body.result.files;",
+              "if (files && files.length) {",
+              "    pm.collectionVariables.set('fileId', files[0].id);",
+              "}",
+              "console.log('documents:', files.map(f => f.name));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/prompt/get",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "prompt",
+            "get"
+          ]
+        },
+        "description": "The prompt in force plus every stored document. Each document carries a presigned `url` that expires after S3_URL_TTL seconds - paste it into a browser to download the original file.\n\nAn empty `system_prompt` means nothing has been stored yet; the chat endpoint will answer 503 until you send one."
+      }
+    },
+    {
+      "name": "Delete one document",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "console.log('documents left:', pm.response.json().result.files.map(f => f.name));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/prompt/files/{{fileId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "prompt",
+            "files",
+            "{{fileId}}"
+          ]
+        },
+        "description": "Removes that one document from S3 and from Mongo. Every other document stays.\n\n`fileId` is set for you by the Update and Get requests; you can also paste any id from their `result.files[].id`. An unknown id answers 404."
+      }
+    },
+    {
+      "name": "Chat message (check the prompt took effect)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"conv_id\": \"postman-test-1\",\n  \"text\": \"What is Care Companion?\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"fullName\": \"Jane Doe\",\n  \"practiceName\": \"Nexus Healthcare\",\n  \"practice_phone\": \"555-0100\",\n  \"providerName\": \"Dr Shafi\",\n  \"caregivers\": [],\n  \"codes\": [],\n  \"programs\": []\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/chat/message",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "chat",
+            "message"
+          ]
+        },
+        "description": "The assistant now builds its instructions from the stored prompt plus every document's text. Send this after an update to confirm the new prompt is the one in use.\n\nNeeds OPENAI_API_KEY set."
+      }
+    }
+  ]
+}

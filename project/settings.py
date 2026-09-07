@@ -66,6 +66,18 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
 
+# --- S3 (uploaded prompt documents) ---
+# S3_ENDPOINT is set for an S3-compatible store; left blank, boto3 talks to AWS.
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "").rstrip("/")
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
+S3_PROMPT_FILES_PREFIX = os.environ.get(
+    "S3_PROMPT_FILES_PREFIX", "prompt-files"
+).strip("/")
+S3_URL_TTL = int(os.environ.get("S3_URL_TTL", "3600"))
+
 ASSETS_URL = os.environ.get("ASSETS_URL", "http://localhost:8000/api/assets").rstrip("/")
 
 LANGUAGE_CODE = "en-us"

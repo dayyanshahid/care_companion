@@ -20,8 +20,27 @@ messages = {
         "The reply was produced but could not be saved. Please try again."
     ),
 
+    # --- System prompt ------------------------------------------------------
+    "promptFetched": "System prompt loaded.",
+    "promptNotConfigured": (
+        "No system prompt has been configured. Add one through the "
+        "prompt API before starting a conversation."
+    ),
+    "promptUpdated": "System prompt updated.",
+    "promptFileDeleted": "Document removed.",
+    "promptFileNotFound": "That document does not exist.",
+    "nothingToUpdate": "Send a system prompt, a file, or both.",
+    "fileTypeUnsupported": (
+        "{name} is not a supported document. Upload .docx, .txt or .md."
+    ),
+    "fileUnreadable": "That document could not be read.",
+    "storageUnavailable": (
+        "The document store is unavailable right now. Please try again."
+    ),
+
     # --- Configuration ------------------------------------------------------
     "openaiKeyMissing": "OPENAI_API_KEY is not configured.",
+    "s3BucketMissing": "S3_BUCKET is not configured.",
 }
 
 class AppError(Exception):
@@ -44,3 +63,11 @@ class ApiError(AppError):
 
 class AssistantError(AppError):
     key = "assistantUnavailable"
+
+
+class StorageError(AppError):
+    key = "storageUnavailable"
+
+
+class DocumentError(AppError):
+    key = "fileUnreadable"

@@ -36,6 +36,7 @@ class HttpStatus(IntEnum):
     notFound = 404
     internalServerError = 500
     badGateway = 502
+    serviceUnavailable = 503
 
 
 class ErrorCode(IntEnum):
