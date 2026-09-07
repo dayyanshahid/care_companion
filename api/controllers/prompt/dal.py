@@ -55,5 +55,16 @@ def create_file(tenant_id, name, s3_key, content_type, size, text):
     )
 
 
+def update_file(record, s3_key, content_type, size, text):
+    record.s3_key = s3_key
+    record.content_type = content_type
+    record.size = size
+    record.text = text
+    record.action_type = ActionType.Updated
+    record.save()
+
+    return record
+
+
 def delete_file(record):
     record.delete()

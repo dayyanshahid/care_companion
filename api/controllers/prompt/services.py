@@ -48,17 +48,7 @@ def update(payload):
         raise build_error(messages["nothingToUpdate"])
 
     texts = _read_all(uploads)
-    keys = _upload_all(uploads)
-
-    for document, text, key in zip(uploads, texts, keys):
-        dal.create_file(
-            tenant_id=tenant_id,
-            name=document.name,
-            s3_key=key,
-            content_type=document.content_type or "",
-            size=document.size,
-            text=text,
-        )
+    _sync_files(tenant_id, uploads, texts)
 
     changes = {}
 
@@ -92,6 +82,56 @@ def remove(file_id):
     dal.delete_file(record)
 
     return read(tenant_id)
+
+
+def _sync_files(tenant_id, uploads, texts):
+    """Make this tenant's documents exactly the ones that were sent.
+
+    A name already stored is rewritten with the file that came with it, a new
+    name is added, and a name that did not arrive is removed. Sending no files
+    therefore leaves the tenant with none.
+
+    Every upload reaches S3 before a single record changes, so a bucket that
+    cannot be written leaves the documents as they were.
+    """
+    keys = _upload_all(uploads)
+    stored = {}
+
+    # A name can hold more than one record: appending was once allowed, so a
+    # tenant may still carry duplicates. One survives, the rest are dropped.
+    for record in dal.find_files(tenant_id):
+        stored.setdefault(record.name, []).append(record)
+
+    for document, text, key in zip(uploads, texts, keys):
+        previous = stored.pop(document.name, [])
+
+        if not previous:
+            dal.create_file(
+                tenant_id=tenant_id,
+                name=document.name,
+                s3_key=key,
+                content_type=document.content_type or "",
+                size=document.size,
+                text=text,
+            )
+            continue
+
+        kept, spares = previous[0], previous[1:]
+        replaced = kept.s3_key
+
+        dal.update_file(
+            kept, key, document.content_type or "", document.size, text
+        )
+        _discard(replaced)
+
+        for spare in spares:
+            _discard(spare.s3_key)
+            dal.delete_file(spare)
+
+    for records in stored.values():
+        for record in records:
+            _discard(record.s3_key)
+            dal.delete_file(record)
 
 
 def _read_all(uploads):
