@@ -1,18 +1,13 @@
 {
   "info": {
     "name": "Care Companion - System Prompt",
-    "description": "The system prompt the assistant runs on, and the documents behind it.\n\nUpdate overwrites the prompt body and APPENDS files. Delete removes one document from S3 and Mongo and leaves the others standing.\n\nThe database is the only source of the prompt - nothing is shipped on disk. Until a prompt is stored, GET returns an empty `system_prompt` and the chat endpoint answers 503.\n\nSet the `baseUrl` variable to your server. `fileId` is filled in automatically by the Update and Get requests, so Delete is ready to send.",
+    "description": "The system prompt the assistant runs on, and the documents behind it.\n\nUpdate overwrites the prompt body and APPENDS files.\n\nThe database is the only source of the prompt - nothing is shipped on disk. Until a prompt is stored, GET returns an empty `system_prompt` and the chat endpoint answers 503.\n\nSet the `baseUrl` variable to your server.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8000",
-      "type": "string"
-    },
-    {
-      "key": "fileId",
-      "value": "",
       "type": "string"
     },
     {
@@ -33,14 +28,7 @@
               "const body = pm.response.json();",
               "",
               "pm.test('200 OK', () => pm.response.to.have.status(200));",
-              "pm.test('succeeded', () => pm.expect(body.success).to.be.true);",
-              "",
-              "// Remember the first document so the Delete request is ready to send.",
-              "const files = body.result && body.result.files;",
-              "if (files && files.length) {",
-              "    pm.collectionVariables.set('fileId', files[0].id);",
-              "    console.log('fileId set to', files[0].id);",
-              "}"
+              "pm.test('succeeded', () => pm.expect(body.success).to.be.true);"
             ]
           }
         }
@@ -112,9 +100,6 @@
               "    () => pm.expect(body.result.tenant_id).to.eql(pm.collectionVariables.get('tenantId')));",
               "",
               "const files = body.result.files;",
-              "if (files && files.length) {",
-              "    pm.collectionVariables.set('fileId', files[0].id);",
-              "}",
               "console.log('documents:', files.map(f => f.name));"
             ]
           }
@@ -142,38 +127,6 @@
           ]
         },
         "description": "That tenant's prompt, chatbot name, and only its documents. Each document carries a presigned `url` that expires after S3_URL_TTL seconds.\n\n`tenant_id` is required and must be a real 24-character ObjectId; it is stored and returned exactly as sent.\n\nA tenant with nothing stored answers 200 with an empty `system_prompt` and no files."
-      }
-    },
-    {
-      "name": "Delete one document",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('200 OK', () => pm.response.to.have.status(200));",
-              "console.log('documents left:', pm.response.json().result.files.map(f => f.name));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "DELETE",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/api/prompt/files/{{fileId}}",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "prompt",
-            "files",
-            "{{fileId}}"
-          ]
-        },
-        "description": "Removes that one document from S3 and from Mongo. Every other document stays.\n\n`fileId` is set for you by the Update and Get requests; you can also paste any id from their `result.files[].id`. An unknown id answers 404."
       }
     },
     {

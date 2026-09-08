@@ -36,12 +36,3 @@ def update_prompt(request):
             data=services.update(payload.validated_data),
         )
     )
-
-
-@api_view(["DELETE"])
-def delete_prompt_file(request, file_id):
-    return Response(
-        response.success(
-            messages["promptFileDeleted"], data=services.remove(file_id)
-        )
-    )

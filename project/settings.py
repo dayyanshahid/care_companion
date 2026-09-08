@@ -70,9 +70,9 @@ OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "512"))
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "6"))
+RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.25"))
 
 # --- S3 (uploaded prompt documents) ---
-# S3_ENDPOINT is set for an S3-compatible store; left blank, boto3 talks to AWS.
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")

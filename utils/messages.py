@@ -27,12 +27,10 @@ messages = {
         "prompt API before starting a conversation."
     ),
     "promptUpdated": "System prompt updated.",
-    "promptFileDeleted": "Document removed.",
-    "promptFileNotFound": "That document does not exist.",
     "nothingToUpdate": "Send a system prompt, a chatbot name, or a file.",
     "invalidTenantId": "tenant_id must be a 24-character ObjectId.",
     "fileTypeUnsupported": (
-        "{name} is not a supported document. Upload .docx, .txt or .md."
+        "{name} is not a supported document. Upload .pdf, .docx, .txt or .md."
     ),
     "fileUnreadable": "That document could not be read.",
     "documentsUnavailable": (

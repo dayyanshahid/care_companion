@@ -31,7 +31,6 @@ def current(tenant_id, query=""):
 
 
 def retrieve(tenant_id, query):
-    """The passages of this tenant's documents that bear on `query`."""
     if not query.strip():
         return ""
 
@@ -47,7 +46,9 @@ def retrieve(tenant_id, query):
             messages["documentsUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    best = embeddings.rank(vector, chunks, settings.RAG_TOP_K)
+    best = embeddings.rank(
+        vector, chunks, settings.RAG_TOP_K, settings.RAG_MIN_SCORE
+    )
 
     return "\n\n".join(chunk.text for chunk, _ in best)
 
@@ -94,44 +95,9 @@ def update(payload):
     return read(tenant_id)
 
 
-def remove(file_id):
-    record = dal.find_file(file_id)
-
-    if record is None:
-        raise build_error(messages["promptFileNotFound"], HttpStatus.notFound)
-
-    try:
-        storage.delete(record.s3_key)
-    except StorageError as error:
-        raise build_error(
-            messages["storageUnavailable"], HttpStatus.badGateway, error
-        ) from error
-
-    tenant_id = record.tenant_id
-    dal.delete_chunks(record.id)
-    dal.delete_file(record)
-
-    return read(tenant_id)
-
-
 def _sync_files(tenant_id, uploads, texts):
-    """Make this tenant's documents exactly the ones that were sent.
-
-    A name already stored is rewritten with the file that came with it, a new
-    name is added, and a name that did not arrive is removed with its chunks.
-    Sending no files therefore leaves the tenant with none.
-
-    A file whose contents have not changed is left alone: not uploaded again,
-    and not embedded again.
-
-    Everything reaches S3 and is embedded before a single record changes, so a
-    bucket that cannot be written or an embedding that fails leaves the
-    documents exactly as they were.
-    """
     stored = {}
 
-    # A name can hold more than one record: appending was once allowed, so a
-    # tenant may still carry duplicates. One survives, the rest are dropped.
     for record in dal.find_files(tenant_id):
         stored.setdefault(record.name, []).append(record)
 
@@ -188,14 +154,12 @@ def _sync_files(tenant_id, uploads, texts):
 
 
 def _drop(record):
-    """Remove a document completely: its chunks, its object, its row."""
     _discard(record.s3_key)
     dal.delete_chunks(record.id)
     dal.delete_file(record)
 
 
 def _embed_all(texts):
-    """Chunk each document and embed the lot in as few calls as possible."""
     per_document = [documents.chunk(text) for text in texts]
     flat = [piece for pieces in per_document for piece in pieces]
 

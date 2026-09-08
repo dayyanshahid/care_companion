@@ -13,8 +13,6 @@ from utils.messages import messages, AssistantError
 
 HISTORY_LIMIT = 40
 
-# How much of the conversation shapes what is retrieved. One short reply
-# ("yes", "how much?") is not enough on its own to find anything by.
 QUERY_TURNS = 3
 
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
@@ -22,7 +20,7 @@ SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
 _openai_client = None
 
 def read_body(body):
-    lines = []
+    lines = [] 
 
     for field, value in body.items():
         if field in SKIP_FIELDS or not value:
@@ -95,24 +93,23 @@ def conversation(conv_id, text):
     ][-HISTORY_LIMIT:]
 
 def search_query(history):
-    """What to look the documents up by: the last few turns, not one word."""
     return "\n".join(turn["content"] for turn in history[-QUERY_TURNS:])
 
 
 def build_prompt(tenant_id, values, query=""):
     stored = prompt_service.current(tenant_id, query)
-    parts = [stored["body"]]
+    parts = [f"PATIENT RECORD:\n{values['record']}"]
 
     if stored["name"]:
         parts.append(
-            f"YOUR NAME:\n{stored['name']} - this is what you are called. "
+            f"CHATBOT NAME:\n{stored['name']} - this is what you are called. "
             "Give this name when a patient asks who they are speaking to."
         )
 
+    parts.append(stored["body"])
+
     if stored["knowledge"]:
         parts.append(f"APPROVED DOCUMENTS:\n{stored['knowledge']}")
-
-    parts.append(f"PATIENT RECORD:\n{values['record']}")
 
     return system_prompt.fill("\n\n".join(parts), values)
 

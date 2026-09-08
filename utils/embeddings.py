@@ -1,9 +1,3 @@
-"""Embedding text, and comparing the vectors.
-
-Similarity is scored here in Python rather than by the database: this MongoDB
-has no vector index, and at a few hundred chunks a full scan costs less than
-reaching for one would.
-"""
 from math import sqrt
 
 import openai
@@ -29,7 +23,6 @@ def client():
 
 
 def embed(texts):
-    """Vectors for these texts, in the order they were given."""
     if not texts:
         return []
 
@@ -54,7 +47,6 @@ def embed(texts):
 
 
 def cosine(left, right):
-    """Similarity of two vectors, 0 when either has no length."""
     if not left or not right:
         return 0.0
 
@@ -64,12 +56,13 @@ def cosine(left, right):
     return dot / size if size else 0.0
 
 
-def rank(vector, chunks, top_k):
-    """The top_k chunks most like `vector`, best first."""
-    scored = sorted(
-        ((chunk, cosine(vector, chunk.embedding)) for chunk in chunks),
-        key=lambda pair: pair[1],
-        reverse=True,
-    )
+def rank(vector, chunks, top_k, floor=0.0):
+    scored = [
+        pair
+        for pair in ((chunk, cosine(vector, chunk.embedding)) for chunk in chunks)
+        if pair[1] >= floor
+    ]
+
+    scored.sort(key=lambda pair: pair[1], reverse=True)
 
     return scored[:top_k]

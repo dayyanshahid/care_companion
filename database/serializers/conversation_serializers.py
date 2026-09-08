@@ -4,13 +4,10 @@ from database.serializers.fields import ObjectIdField
 
 
 def optional():
-    """A patient field the caller may omit; a blank reads as unknown."""
     return serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class CaregiverSerializer(serializers.Serializer):
-    """Someone else on the patient's record, and how they are related."""
-
     name = optional()
     phone = optional()
     relationship = optional()
@@ -18,8 +15,6 @@ class CaregiverSerializer(serializers.Serializer):
 
 
 class ConditionCodeSerializer(serializers.Serializer):
-    """One coded condition. `status` says whether it is confirmed."""
-
     code = optional()
     description = optional()
     conditionId = optional()
@@ -30,18 +25,6 @@ class ConditionCodeSerializer(serializers.Serializer):
 
 
 class ChatMessagePayloadSerializer(serializers.Serializer):
-    """One stateless turn: the patient's record and their message, in full.
-
-    Only tenant_id, conv_id and text are required. The rest personalises the
-    reply, and every one of them is safe to leave out.
-
-    `tenant_id` says whose prompt and whose documents the assistant answers
-    with; it never reads another tenant's.
-
-    The conversation so far is not sent: it is read from the stored
-    transcript for this conv_id.
-    """
-
     tenant_id = ObjectIdField()
     conv_id = serializers.CharField()
     text = serializers.CharField()
@@ -72,7 +55,5 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
 
 
 class ChatMessageResponseSerializer(serializers.Serializer):
-    """One turn's reply, and the conversation it belongs to."""
-
     conv_id = serializers.CharField()
     response = serializers.CharField()
