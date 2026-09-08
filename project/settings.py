@@ -63,8 +63,8 @@ REST_FRAMEWORK = {
 
 # --- OpenAI (Chat + Embeddings) ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5")
-OPENAI_MAX_TOKENS = int(os.environ.get("OPENAI_MAX_TOKENS", "1000"))
+OPENAI_MODEL = "gpt-5-mini"
+OPENAI_MAX_TOKENS = 4000
 
 # --- Retrieval over the uploaded documents ---
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
