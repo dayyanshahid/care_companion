@@ -66,6 +66,11 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = "gpt-5-mini"
 OPENAI_MAX_TOKENS = 4000
 
+# --- Where /message calls itself back for the messages it holds ---
+CHAT_SELF_URL = os.environ.get(
+    "CHAT_SELF_URL", "https://api-carecompanion.mysmartsync.com/api/chat/message"
+)
+
 # --- Retrieval over the uploaded documents ---
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "512"))

@@ -1,4 +1,6 @@
 import json
+import threading
+import urllib.request
 
 import openai
 from django.conf import settings
@@ -16,6 +18,14 @@ HISTORY_LIMIT = 40
 QUERY_TURNS = 3
 
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
+
+FOLLOW_UP_TEXT = "yes"
+
+FOLLOW_UP_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0",
+}
 
 _openai_client = None
 
@@ -49,7 +59,7 @@ def send_message(body):
     queued = dal.next_queued(conv_id)
 
     if queued:
-        return deliver(conv_id, text, queued)
+        return deliver(conv_id, queued)
 
     if not text:
         raise build_error(messages["nothingQueued"])
@@ -70,7 +80,11 @@ def send_message(body):
             messages["emptyAssistantReply"], HttpStatus.badGateway
         )
 
-    return record_turn(conv_id, text, answer)
+    result = record_turn(conv_id, text, answer)
+
+    follow_up(body, len(answer) - 1)
+
+    return result
 
 def record_turn(conv_id, text, answer):
     """Send the first text back and leave the rest for the calls that follow.
@@ -96,16 +110,41 @@ def record_turn(conv_id, text, answer):
     return reply(conv_id, first)
 
 
-def deliver(conv_id, text, queued):
+def follow_up(body, count):
+    """Call /message again, once for each message still being held.
+
+    The consent points go out as three texts and a reply carries one, so the
+    second and third are only collected when the endpoint is called again.
+    The patient has already been answered, so none of this is waited on.
+    """
+    if count < 1 or not settings.CHAT_SELF_URL:
+        return
+
+    payload = json.dumps({**body, "text": FOLLOW_UP_TEXT}, default=str).encode()
+
+    threading.Thread(target=drain, args=(payload, count), daemon=True).start()
+
+
+def drain(payload, count):
+    for _ in range(count):
+        request = urllib.request.Request(
+            settings.CHAT_SELF_URL, data=payload, headers=FOLLOW_UP_HEADERS
+        )
+
+        try:
+            urllib.request.urlopen(request, timeout=60).read()
+        except Exception:
+            return
+
+
+def deliver(conv_id, queued):
     """Hand over the next queued text instead of asking the model again.
 
-    The follow-on call is made automatically and carries no patient message,
-    so there is nothing to answer - only the message already written.
+    The call that collects it is one we made ourselves, so its text is not the
+    patient speaking and is never recorded. Writing it down would leave the
+    transcript showing agreement the patient never gave.
     """
     try:
-        if text:
-            dal.create_message(conv_id, MessageRole.user, text)
-
         dal.mark_sent(queued)
     except Exception as error:
         raise build_error(
