@@ -27,6 +27,7 @@ class ActionType(IntEnum):
     Created = 1
     Updated = 2
     Deleted = 3
+    Queued = 4
 
 
 class HttpStatus(IntEnum):

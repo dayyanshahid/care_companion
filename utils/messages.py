@@ -16,6 +16,9 @@ messages = {
     "transcriptUnavailable": (
         "The conversation could not be read right now. Please try again."
     ),
+    "nothingQueued": (
+        "There is no queued message to send. Include the patient's text."
+    ),
     "turnNotStored": (
         "The reply was produced but could not be saved. Please try again."
     ),
