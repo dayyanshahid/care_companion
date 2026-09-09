@@ -57,3 +57,4 @@ class ChatMessagePayloadSerializer(serializers.Serializer):
 class ChatMessageResponseSerializer(serializers.Serializer):
     conv_id = serializers.CharField()
     response = serializers.CharField()
+    parts = serializers.ListField(child=serializers.CharField())
