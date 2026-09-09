@@ -68,19 +68,21 @@ def send_message(body):
     return record_turn(conv_id, text, answers)
 
 def record_turn(conv_id, text, answers):
-    """Every message is stored; the caller is handed the first of them."""
+    """One payload per message, so each is streamed to the caller in turn."""
     try:
         dal.create_message(conv_id, MessageRole.user, text)
 
-        for answer in answers:
-            dal.create_message(conv_id, MessageRole.assistant, answer)
+        return [store_reply(conv_id, answer) for answer in answers]
     except Exception as error:
         raise build_error(
             messages["turnNotStored"], HttpStatus.badGateway, error
         ) from error
 
+def store_reply(conv_id, answer):
+    dal.create_message(conv_id, MessageRole.assistant, answer)
+
     return ChatMessageResponseSerializer(
-        {"conv_id": conv_id, "response": answers[0]}
+        {"conv_id": conv_id, "response": answer}
     ).data
 
 def conversation(conv_id, text):

@@ -1,3 +1,6 @@
+import json
+
+from django.http import StreamingHttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -9,6 +12,13 @@ from utils.enums import HttpStatus
 from utils.messages import messages
 
 
+def stream(_common, results):
+    for result in results:
+        yield json.dumps(
+            _common.success(messages["messageSent"], HttpStatus.ok, result)
+        ) + "\n"
+
+
 @api_view(["POST"])
 def send_message(request):
     _common = ResponseHelper()
@@ -17,10 +27,11 @@ def send_message(request):
         payload = ChatMessagePayloadSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
-        result = services.send_message(payload.validated_data)
+        results = services.send_message(payload.validated_data)
 
-        return Response(
-            _common.success(messages["messageSent"], HttpStatus.ok, result)
+        return StreamingHttpResponse(
+            stream(_common, results),
+            content_type="application/x-ndjson",
         )
     except ValidationError:
         raise

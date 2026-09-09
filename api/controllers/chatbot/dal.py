@@ -8,6 +8,7 @@ def create_message(conv_id, role, text):
         text=text,
     )
 
+
 def find_messages(conv_id):
     return Message.objects.filter(
         conversation_id=conv_id,
