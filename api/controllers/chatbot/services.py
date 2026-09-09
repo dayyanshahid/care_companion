@@ -17,6 +17,10 @@ QUERY_TURNS = 3
 
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
 
+CONSENT_LABEL = "CONSENT"
+
+CONSENT_PARTS = ("CONSENT 1", "CONSENT 2", "CONSENT 3")
+
 _openai_client = None
 
 def read_body(body):
@@ -50,30 +54,33 @@ def send_message(body):
     try:
         history = conversation(conv_id, text)
         prompt = build_prompt(tenant_id, values, search_query(history))
-        answer = resolve_label(ask_openai(prompt, history), prompt)
+        answers = resolve_label(ask_openai(prompt, history), prompt)
     except AssistantError as error:
         raise build_error(
             messages["assistantUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    if not answer:
+    if not answers:
         raise build_error(
             messages["emptyAssistantReply"], HttpStatus.badGateway
         )
 
-    return record_turn(conv_id, text, answer)
+    return record_turn(conv_id, text, answers)
 
-def record_turn(conv_id, text, answer):
+def record_turn(conv_id, text, answers):
+    """Every message is stored; the caller is handed the first of them."""
     try:
         dal.create_message(conv_id, MessageRole.user, text)
-        dal.create_message(conv_id, MessageRole.assistant, answer)
+
+        for answer in answers:
+            dal.create_message(conv_id, MessageRole.assistant, answer)
     except Exception as error:
         raise build_error(
             messages["turnNotStored"], HttpStatus.badGateway, error
         ) from error
 
     return ChatMessageResponseSerializer(
-        {"conv_id": conv_id, "response": answer}
+        {"conv_id": conv_id, "response": answers[0]}
     ).data
 
 def conversation(conv_id, text):
@@ -115,7 +122,15 @@ def build_prompt(tenant_id, values, query=""):
 
 def resolve_label(answer, prompt):
     label = answer.strip().strip("*#.:").strip().upper()
-    return system_prompt.templates(prompt).get(label) or answer
+    wording = system_prompt.templates(prompt)
+
+    if label == CONSENT_LABEL:
+        parts = [wording[name] for name in CONSENT_PARTS if name in wording]
+
+        if parts:
+            return parts
+
+    return [part for part in [wording.get(label) or answer] if part]
 
 def client():
     global _openai_client
