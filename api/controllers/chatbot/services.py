@@ -54,33 +54,49 @@ def send_message(body):
     try:
         history = conversation(conv_id, text)
         prompt = build_prompt(tenant_id, values, search_query(history))
-        answers = resolve_label(ask_openai(prompt, history), prompt)
+        parts = consent_parts(prompt)
+        pending = next_consent_part(history, parts)
+
+        if pending:
+            return record_turn(conv_id, "", pending)
+
+        answer = resolve_label(ask_openai(prompt, history), prompt)
     except AssistantError as error:
         raise build_error(
             messages["assistantUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    if not answers:
+    if not answer:
         raise build_error(
             messages["emptyAssistantReply"], HttpStatus.badGateway
         )
 
-    return record_turn(conv_id, text, answers)
+    result = record_turn(conv_id, text, answer)
 
-def record_turn(conv_id, text, answers):
-    """Consent finishes in this one turn: every part is stored, the first is returned."""
+    finish_consent(body, answer, parts)
+
+    return result
+
+def finish_consent(body, answer, parts):
+    """The first part has gone out, so run the turn again for each one still due."""
+    if parts and answer == parts[0]:
+        for _ in parts[1:]:
+            send_message(body)
+
+def record_turn(conv_id, text, answer):
+    """A consent re-run carries no patient message, so only the reply is stored."""
     try:
-        dal.create_message(conv_id, MessageRole.user, text)
+        if text:
+            dal.create_message(conv_id, MessageRole.user, text)
 
-        for answer in answers:
-            dal.create_message(conv_id, MessageRole.assistant, answer)
+        dal.create_message(conv_id, MessageRole.assistant, answer)
     except Exception as error:
         raise build_error(
             messages["turnNotStored"], HttpStatus.badGateway, error
         ) from error
 
     return ChatMessageResponseSerializer(
-        {"conv_id": conv_id, "response": answers[0]}
+        {"conv_id": conv_id, "response": answer}
     ).data
 
 def conversation(conv_id, text):
@@ -121,17 +137,28 @@ def build_prompt(tenant_id, values, query=""):
     return system_prompt.fill("\n\n".join(parts), values)
 
 def resolve_label(answer, prompt):
-    """Every message this turn produces - three of them for consent, else one."""
     label = answer.strip().strip("*#.:").strip().upper()
-    wording = system_prompt.templates(prompt)
 
     if label == CONSENT_LABEL:
-        parts = [wording[name] for name in CONSENT_PARTS if name in wording]
+        parts = consent_parts(prompt)
 
         if parts:
-            return parts
+            return parts[0]
 
-    return [part for part in [wording.get(label) or answer] if part]
+    return system_prompt.templates(prompt).get(label) or answer
+
+def consent_parts(prompt):
+    wording = system_prompt.templates(prompt)
+    return [wording[name] for name in CONSENT_PARTS if name in wording]
+
+def next_consent_part(history, parts):
+    """The part after the one last sent, so each re-run picks up where it left off."""
+    spoken = [
+        turn["content"] for turn in history if turn["role"] == MessageRole.assistant
+    ]
+    last = spoken[-1] if spoken else ""
+
+    return next((later for sent, later in zip(parts, parts[1:]) if sent == last), "")
 
 def client():
     global _openai_client
