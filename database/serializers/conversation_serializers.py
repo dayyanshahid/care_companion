@@ -27,7 +27,7 @@ class ConditionCodeSerializer(serializers.Serializer):
 class ChatMessagePayloadSerializer(serializers.Serializer):
     tenant_id = ObjectIdField()
     conv_id = serializers.CharField()
-    text = serializers.CharField(allow_blank=True)
+    text = serializers.CharField()
 
     firstName = optional()
     lastName = optional()

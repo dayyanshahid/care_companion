@@ -1,7 +1,5 @@
 import re
 
-BREAK = re.compile(r"\n\s*---\s*\n")
-
 PLACEHOLDERS = {
     "[Patient Name]": "patient_name",
     "[Provider name]": "provider",
@@ -42,12 +40,3 @@ def templates(prompt):
 
 def _unwrap(text):
     return re.sub(r"(?<!\n)\n(?!\n|\d+\. )[ \t]*", " ", text)
-
-
-def parts(text):
-    """A reviewed block may be written as several texts split by a --- line.
-
-    The patient gets them as separate messages, so the split has to survive
-    all the way out to the caller rather than being flattened into one reply.
-    """
-    return [part.strip() for part in BREAK.split(text) if part.strip()]
