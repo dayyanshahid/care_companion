@@ -39,4 +39,10 @@ def templates(prompt):
 
 
 def _unwrap(text):
-    return re.sub(r"(?<!\n)\n(?!\n|\d+\. )[ \t]*", " ", text)
+    """One paragraph per reviewed message.
+
+    The seven consent points used to keep their line breaks. CONSENT was then
+    the only message carrying newlines, and the only one that never reached a
+    handset - the opening outreach is the same length, has none, and arrives.
+    """
+    return re.sub(r"(?<!\n)\n(?!\n)[ \t]*", " ", text)
