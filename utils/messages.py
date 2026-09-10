@@ -13,6 +13,9 @@ messages = {
     "emptyAssistantReply": (
         "The assistant returned nothing. Please try again."
     ),
+    "transcriptUnavailable": (
+        "The conversation could not be read right now. Please try again."
+    ),
     "turnNotStored": (
         "The reply was produced but could not be saved. Please try again."
     ),

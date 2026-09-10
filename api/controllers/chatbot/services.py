@@ -11,6 +11,10 @@ from utils.common import build_error
 from utils.enums import HttpStatus, MessageRole
 from utils.messages import messages, AssistantError
 
+HISTORY_LIMIT = 40
+
+QUERY_TURNS = 3
+
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
 
 _openai_client = None
@@ -44,8 +48,9 @@ def send_message(body):
     values = read_body(body)
 
     try:
-        prompt = build_prompt(tenant_id, values, text)
-        answer = resolve_label(ask_openai(prompt, conv_id, text), prompt)
+        history = conversation(conv_id, text)
+        prompt = build_prompt(tenant_id, values, search_query(history))
+        answer = resolve_label(ask_openai(prompt, history), prompt)
     except AssistantError as error:
         raise build_error(
             messages["assistantUnavailable"], HttpStatus.badGateway, error
@@ -70,6 +75,27 @@ def record_turn(conv_id, text, answer):
     return ChatMessageResponseSerializer(
         {"conv_id": conv_id, "response": answer}
     ).data
+
+def conversation(conv_id, text):
+    """Zero Data Retention keeps OpenAI from holding the transcript, so we do."""
+    try:
+        earlier = [
+            {"role": message.role, "content": message.text}
+            for message in dal.find_messages(conv_id)
+        ]
+    except Exception as error:
+        raise build_error(
+            messages["transcriptUnavailable"], HttpStatus.badGateway, error
+        ) from error
+
+    return [
+        *earlier,
+        {"role": MessageRole.user, "content": text},
+    ][-HISTORY_LIMIT:]
+
+def search_query(history):
+    return "\n".join(turn["content"] for turn in history[-QUERY_TURNS:])
+
 
 def build_prompt(tenant_id, values, query=""):
     stored = prompt_service.current(tenant_id, query)
@@ -103,16 +129,14 @@ def client():
 
     return _openai_client
 
-def ask_openai(prompt, conv_id, text):
-    """OpenAI holds the transcript; `conv_id` is the conversation it belongs to."""
+def ask_openai(prompt, history):
     api = client()
 
     try:
         response = api.responses.create(
             model=settings.OPENAI_MODEL,
             instructions=prompt,
-            conversation=conv_id,
-            input=[{"role": MessageRole.user, "content": text}],
+            input=history,
             max_output_tokens=settings.OPENAI_MAX_TOKENS,
         )
     except Exception as error:
