@@ -138,6 +138,7 @@ def ask_openai(prompt, history):
             instructions=prompt,
             input=history,
             max_output_tokens=settings.OPENAI_MAX_TOKENS,
+            reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
         )
     except Exception as error:
         raise AssistantError(str(error)) from error

@@ -65,6 +65,7 @@ REST_FRAMEWORK = {
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = "gpt-5-mini"
 OPENAI_MAX_TOKENS = 4000
+OPENAI_REASONING_EFFORT = "low"
 
 # --- Retrieval over the uploaded documents ---
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")

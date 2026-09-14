@@ -17,11 +17,33 @@ def fill(body, values):
 
         if value:
             text = text.replace(placeholder, value)
-
-    if not (values.get("patient_name") or "").strip():
-        text = re.sub(r",?\s*\[Patient Name\]", "", text)
+        elif placeholder == "[Patient Name]":
+            text = re.sub(r",?\s*\[Patient Name\]", "", text)
+        else:
+            text = _drop(text, placeholder)
 
     return text
+
+
+def _drop(text, placeholder):
+    """No value for this placeholder, so the sentence carrying it does not go out.
+
+    Section 6 wording is never written by the model - it sends a label and the
+    reviewed text is substituted in afterwards - so a bracket still standing
+    here is one a patient reads. Rule 10 drops the sentence, never invents a
+    value. A name is the exception and is handled above: dropping the sentence
+    would take the whole greeting with it.
+    """
+    lines = []
+
+    for line in text.split("\n"):
+        if placeholder in line:
+            sentences = re.findall(r"[^.]*\.[ \t]*|[^.]+$", line)
+            line = "".join(s for s in sentences if placeholder not in s).rstrip()
+
+        lines.append(line)
+
+    return "\n".join(lines)
 
 
 def templates(prompt):
