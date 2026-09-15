@@ -26,14 +26,6 @@ def fill(body, values):
 
 
 def _drop(text, placeholder):
-    """No value for this placeholder, so the sentence carrying it does not go out.
-
-    Section 6 wording is never written by the model - it sends a label and the
-    reviewed text is substituted in afterwards - so a bracket still standing
-    here is one a patient reads. Rule 10 drops the sentence, never invents a
-    value. A name is the exception and is handled above: dropping the sentence
-    would take the whole greeting with it.
-    """
     lines = []
 
     for line in text.split("\n"):
@@ -61,10 +53,4 @@ def templates(prompt):
 
 
 def _unwrap(text):
-    """One paragraph per reviewed message.
-
-    The seven consent points used to keep their line breaks. CONSENT was then
-    the only message carrying newlines, and the only one that never reached a
-    handset - the opening outreach is the same length, has none, and arrives.
-    """
     return re.sub(r"(?<!\n)\n(?!\n)[ \t]*", " ", text)

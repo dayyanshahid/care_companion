@@ -11,8 +11,6 @@ from utils.common import build_error
 from utils.enums import HttpStatus, MessageRole
 from utils.messages import messages, AssistantError
 
-HISTORY_LIMIT = 40
-
 QUERY_TURNS = 3
 
 SKIP_FIELDS = {"tenant_id", "conv_id", "text"}
@@ -48,9 +46,8 @@ def send_message(body):
     values = read_body(body)
 
     try:
-        history = conversation(conv_id, text)
-        prompt = build_prompt(tenant_id, values, search_query(history))
-        answer = resolve_label(ask_openai(prompt, history), prompt)
+        prompt = build_prompt(tenant_id, values, search_query(conv_id, text))
+        answer = ask_openai(prompt, conv_id, text)
     except AssistantError as error:
         raise build_error(
             messages["assistantUnavailable"], HttpStatus.badGateway, error
@@ -76,25 +73,15 @@ def record_turn(conv_id, text, answer):
         {"conv_id": conv_id, "response": answer}
     ).data
 
-def conversation(conv_id, text):
-    """Zero Data Retention keeps OpenAI from holding the transcript, so we do."""
+def search_query(conv_id, text):
     try:
-        earlier = [
-            {"role": message.role, "content": message.text}
-            for message in dal.find_messages(conv_id)
-        ]
+        earlier = [message.text for message in dal.find_messages(conv_id)]
     except Exception as error:
         raise build_error(
             messages["transcriptUnavailable"], HttpStatus.badGateway, error
         ) from error
 
-    return [
-        *earlier,
-        {"role": MessageRole.user, "content": text},
-    ][-HISTORY_LIMIT:]
-
-def search_query(history):
-    return "\n".join(turn["content"] for turn in history[-QUERY_TURNS:])
+    return "\n".join([*earlier, text][-QUERY_TURNS:])
 
 
 def build_prompt(tenant_id, values, query=""):
@@ -129,18 +116,34 @@ def client():
 
     return _openai_client
 
-def ask_openai(prompt, history):
+def ask_openai(prompt, conv_id, text):
     api = client()
 
     try:
         response = api.responses.create(
             model=settings.OPENAI_MODEL,
             instructions=prompt,
-            input=history,
+            conversation=conv_id,
+            input=text,
+            truncation="auto",
             max_output_tokens=settings.OPENAI_MAX_TOKENS,
             reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
         )
+        answer = (response.output_text or "").strip()
+        wording = resolve_label(answer, prompt)
+
+        if wording != answer:
+            replace_reply(api, conv_id, response, wording)
     except Exception as error:
         raise AssistantError(str(error)) from error
 
-    return (response.output_text or "").strip()
+    return wording
+
+def replace_reply(api, conv_id, response, text):
+    """The model answers with a label; the transcript must hold what the patient got."""
+    reply = next(item for item in reversed(response.output) if item.type == "message")
+    api.conversations.items.delete(reply.id, conversation_id=conv_id)
+    api.conversations.items.create(
+        conversation_id=conv_id,
+        items=[{"type": "message", "role": "assistant", "content": text}],
+    )

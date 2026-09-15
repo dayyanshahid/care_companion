@@ -1,46 +1,24 @@
 from utils.enums import HttpStatus
 
 messages = {
-    # --- Generic ------------------------------------------------------------
     "validationFailed": "Validation failed.",
     "internalServerError": "Internal server error.",
     "routeNotFound": "That endpoint does not exist.",
     "careTeamFallback": "your care team",
-
-    # --- Chat ---------------------------------------------------------------
     "assistantUnavailable": "The assistant is unavailable right now. Please try again.",
     "messageSent": "Message sent.",
-    "emptyAssistantReply": (
-        "The assistant returned nothing. Please try again."
-    ),
-    "transcriptUnavailable": (
-        "The conversation could not be read right now. Please try again."
-    ),
-    "turnNotStored": (
-        "The reply was produced but could not be saved. Please try again."
-    ),
-
-    # --- System prompt ------------------------------------------------------
+    "emptyAssistantReply": "The assistant returned nothing. Please try again.",
+    "transcriptUnavailable": "The conversation could not be read right now. Please try again.",
+    "turnNotStored": "The reply was produced but could not be saved. Please try again.",
     "promptFetched": "System prompt loaded.",
-    "promptNotConfigured": (
-        "No system prompt has been configured. Add one through the "
-        "prompt API before starting a conversation."
-    ),
+    "promptNotConfigured": "No system prompt has been configured. Add one through the prompt API before starting a conversation.",
     "promptUpdated": "System prompt updated.",
     "nothingToUpdate": "Send a system prompt, a chatbot name, or a file.",
     "invalidTenantId": "tenant_id must be a 24-character ObjectId.",
-    "fileTypeUnsupported": (
-        "{name} is not a supported document. Upload .pdf, .docx, .txt or .md."
-    ),
+    "fileTypeUnsupported": "{name} is not a supported document. Upload .pdf, .docx, .txt or .md.",
     "fileUnreadable": "That document could not be read.",
-    "documentsUnavailable": (
-        "The documents could not be prepared right now. Please try again."
-    ),
-    "storageUnavailable": (
-        "The document store is unavailable right now. Please try again."
-    ),
-
-    # --- Configuration ------------------------------------------------------
+    "documentsUnavailable": "The documents could not be prepared right now. Please try again.",
+    "storageUnavailable": "The document store is unavailable right now. Please try again.",
     "openaiKeyMissing": "OPENAI_API_KEY is not configured.",
     "s3BucketMissing": "S3_BUCKET is not configured.",
 }
