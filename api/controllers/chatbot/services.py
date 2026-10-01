@@ -140,7 +140,6 @@ def ask_openai(prompt, conv_id, text):
     return wording
 
 def replace_reply(api, conv_id, response, text):
-    """The model answers with a label; the transcript must hold what the patient got."""
     reply = next(item for item in reversed(response.output) if item.type == "message")
     api.conversations.items.delete(reply.id, conversation_id=conv_id)
     api.conversations.items.create(

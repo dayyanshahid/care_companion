@@ -43,7 +43,7 @@
               "key": "system_prompt",
               "value": "## 1. WHO YOU ARE\n\nYou are the Care Companion team's secure automated AI assistant...",
               "type": "text",
-              "description": "The prompt body. Overwrites whatever is stored, and is the assistant's only instructions - keep the '## 6. REVIEWED WORDING' section or the reviewed emergency and consent wording stops being substituted. Leave this row disabled to add files without touching the prompt."
+              "description": "The prompt body. Overwrites whatever is stored, and is the assistant's only instructions - keep the '## 6. REVIEWED WORDING' section or the reviewed consent and enrollment wording stops being substituted. Leave this row disabled to add files without touching the prompt."
             },
             {
               "key": "chatbot_name",
